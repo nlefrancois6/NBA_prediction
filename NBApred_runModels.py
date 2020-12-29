@@ -24,6 +24,7 @@ output_label = ['teamRslt']
 training_df = model_data_df.sample(frac=0.8, random_state=1)
 indlist=list(training_df.index.values)
 
+#Instead of a random split, I could use 2017 data as the testing set
 testing_df = model_data_df.copy().drop(index=indlist)
 
 #Define the features (input) and label (prediction output) for training set
@@ -33,6 +34,8 @@ training_label = training_df[output_label]
 #Define features and label for testing set
 testing_features = testing_df[features]
 testing_label = testing_df[output_label]
+testing_odds_v = testing_df['V ML']
+testing_odds_h = testing_df['H ML']
 
 #Train a Gradient Boosting Machine on the data
 gbc = ensemble.GradientBoostingClassifier(n_estimators = 500, learning_rate = 0.02, max_depth=1)
@@ -54,12 +57,57 @@ if plot_features:
     plt.xticks(rotation='vertical')
     plt.show()
 
+def expected_gain(pred_prob, odds_v, odds_h):
+    """
+    Calculate the expected value of a bet
+    
+    pred_prob: Array of form [v_win_prob, v_lose_prob] with the model prediction probs
+    
+    odds_v: the moneyline odds on visitors
+    
+    odds_h: the moneyline odds on home
+    """
+    wager = 10
+    
+    #Get the predicted winner
+    if pred_prob[0] > pred_prob[1]:
+        visitor_win_pred = 'Win'
+        correct_prob = pred_prob[0]
+        wrong_prob = pred_prob[1]
+    else:
+        visitor_win_pred = 'Loss'
+        correct_prob = pred_prob[1]
+        wrong_prob = pred_prob[0]
+    #Find the gain we would get if our prediction is correct
+    if visitor_win_pred == 'Win':
+        #odds[0] is odds on visitor win
+        if odds_v > 0:
+            gain_correct_pred = odds_v*(wager/100)
+        else:
+            gain_correct_pred = 100*(wager/(-odds_v))
+    if pred_prob[0] < pred_prob[1]:
+        #odds[1] is odds on home win
+        if odds_h > 0:
+            gain_correct_pred = odds_h*(wager/100)
+        else:
+            gain_correct_pred = 100*(wager/(-odds_h))
+    #If our prediction is wrong, we lose the wager
+    gain_wrong_pred = -wager
+    #The expected gain is equal to each of the two possible gain outcomes multiplied
+    #by the probability of the outcome, as determined by the model confidences
+    exp_gain = gain_correct_pred*correct_prob + gain_wrong_pred*wrong_prob
+    
+    return exp_gain
+    
+    
 
 #Could filter the testing set to only "bet" on games where we meet a minimum confidence
 #Will need to check whether this raises or lowers profit since we might be missing upsets and actually lose money since we only bet on strong favourites
 min_conf_filter = False
 if min_conf_filter:
     min_confidence = 0.7
+    #Instead of just checking confidence, I should calculate an expected profit using the
+    #odds and the model confidence to give a better metric of a 'good bet'
 
     predGB_minConfSatisfied = []
     predGB_label_minConfSatisfied = []
@@ -122,15 +170,23 @@ def calc_Profit(account, wager_pct, winner_prediction, winner_actual, moneyline_
     return account_runningTotal
 
 profit_calc = True
+dummy_odds = False
 if profit_calc:
     account = 100
     wager_pct = 0.1
     winner_prediction = predGB
     winner_actual = testing_label['teamRslt'].array
+    #Get the ML odds for each game, either from the data or using dummy odds
     moneyline_odds = np.zeros([len(winner_prediction),2])
-    for i in range(len(winner_prediction)):
-        moneyline_odds[i,0] = 120
-        moneyline_odds[i,1] = -140
+    if dummy_odds:
+        for i in range(len(winner_prediction)):
+            moneyline_odds[i,0] = 170
+            moneyline_odds[i,1] = -200
+    else:
+        for i in range(len(winner_prediction)):
+            moneyline_odds[i,0] = testing_odds_v.iloc[i]
+            moneyline_odds[i,1] = testing_odds_h.iloc[i]
+            
     account_runningTotal = calc_Profit(account, wager_pct, winner_prediction, winner_actual, moneyline_odds)
     
     plt.figure()
