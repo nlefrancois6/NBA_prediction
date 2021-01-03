@@ -113,7 +113,8 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
                 threshold_met = False
         if threshold_met == True:
             if fixed_wager == False:
-                wager = wager_pct*account
+                #wager = wager_pct*account*np.exp(-exp_gain)
+                wager = wager_pct*account*exp_gain
             else:
                 wager = 10
             #If our prediction was correct, calculate the winnings
@@ -435,7 +436,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     
     return class_model, classifier_feature_importance, profit_reg_model, testing_gains_reg
 
-def layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct):
+def layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct):
     """
     Validate the layered model using an unseen dataset. Inputs are mostly the same as for 
     layered_model_TestTrain, with class_model and profit_reg_model the two trained model
@@ -465,7 +466,6 @@ def layered_model_validate(validation_data_df, class_features, output_label, cla
     reg_val_df['H ML'] = validation_odds_h.reset_index().drop(columns = ['index'])
     
     reg_val_features = reg_val_df[reg_features]
-    #reg_val_label = reg_val_df[reg_label]
     
     #Get regression predictions on validation data
     expected_profit_val = profit_reg_model.predict(reg_val_features)
@@ -489,3 +489,56 @@ def layered_model_validate(validation_data_df, class_features, output_label, cla
         plt.title('Classification-Regression Layered Model Profit, Validation Data')
       
     return val_gains_reg
+
+def make_new_bets(current_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, fixed_wager, wager_pct, account):
+    """
+    Given data for some new games (current_data_df) and the trained layered model, 
+    output the games that we should bet on and how much money to bet
+    """
+    
+    #Format the data
+    data_class_features = current_data_df[class_features]
+    #data_label = current_data_df[output_label]
+    data_odds_v = current_data_df['V ML']
+    data_odds_h = current_data_df['H ML']
+    
+    pred_class = class_model.predict(data_class_features) 
+    pred_probs_class = class_model.predict_proba(data_class_features)
+    
+    d_val = {'Pred Probs V': pred_probs_class[:,0], 'Pred Probs H': pred_probs_class[:,1], 'Prediction': pred_class}
+    reg_data_df = pd.DataFrame(data=d_val)
+    
+    reg_data_df['V ML'] = data_odds_v.reset_index().drop(columns = ['index'])
+    reg_data_df['H ML'] = data_odds_h.reset_index().drop(columns = ['index'])
+    
+    reg_data_features = reg_data_df[reg_features]
+    expected_profit_data = profit_reg_model.predict(reg_data_features)
+
+    bet_placed_index_store = []
+    wager_store = []
+    numGames = len(expected_profit_data)
+    for i in range(numGames):
+        #By default, bet on the game (ie threshold_met = True)
+        threshold_met = True
+        #Get the expected profit from the regression model and check if it's above the threshold
+        exp_gain = expected_profit_data[i]
+        if exp_gain < reg_threshold:
+            #If the threshold is not met, do not bet on the game
+            threshold_met = False
+        if threshold_met == True:
+            if fixed_wager == False:
+                #wager = wager_pct*account
+                wager = wager_pct*account*(exp_gain) #probably want to normalize the expected gain
+            else:
+                wager = 10
+            
+            bet_placed_index_store.append(i)
+            wager_store.append(wager)
+    
+    num_bets_placed = len(wager_store)
+    print(num_bets_placed, 'bets recommended out of', numGames, 'total games')
+    
+    return bet_placed_index_store, wager_store
+    
+    
+    

@@ -24,6 +24,11 @@ indlist=list(training_df.index.values)
 
 testing_df = model_data_df.copy().drop(index=indlist)
 
+#Set the control switches for the layered model
+plot_gains = True
+fixed_wager = True
+wager_pct = 0.1
+
 #Select the classification features & model hyperparams
 #away_features = ['teamFG%','teamEFG%','teamOrtg','teamEDiff']
 #home_features = ['opptTS%','opptEFG%','opptPPS','opptDrtg','opptEDiff','opptAST/TO','opptSTL/TO']
@@ -34,32 +39,30 @@ class_features = ['teamAbbr','opptAbbr','Season'] + away_features + home_feature
 output_label = ['teamRslt'] 
 #Note teamRslt = Win means visitors win, teamRslt = Loss means home wins
 
-#Set the control switches for the layered model
-plot_gains = True
-fixed_wager = True
-wager_pct = 0.1
-
-#Optimization script can start the gridsearch for loops here
-class_params = [500, 0.02, 5] 
+class_params = [300, 0.01, 5] 
 classifier_model = 'GB'
 
 #Select the regression features & model hyperparams
 reg_features = ['V ML', 'H ML', 'Pred Probs V', 'Pred Probs H']
 reg_label = ['Classifier Profit']
 
-reg_params = [100, 3]   
-reg_threshold = 0 
+reg_params = [300, 5]   
+reg_threshold = 0.1
 #I think I should leave reg_threshold fixed during the model optimization since the
 #testing and validation data behave so differently when it is > 0 vs = 0
 
 #Train and test the layered model
 class_model, classifier_feature_importance, profit_reg_model, testing_gains_reg = pf.layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct)
-#Optimization for loops end here
-
 
 #Validate the model using the unseen 2017 data
 validation_test = True
 if validation_test:
-    val_gains_reg = pf.layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct)
+    val_gains_reg = pf.layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct)
 
-    
+#Given some new games, determine what bets to place
+new_bets = False
+if new_bets:
+    account = 100
+    fixed_wager = False
+    current_data_df = validation_data_df[0:20]
+    bet_placed_indices, wagers = pf.make_new_bets(current_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, fixed_wager, wager_pct, account)
