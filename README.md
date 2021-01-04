@@ -21,6 +21,8 @@ Scripts for the data pipeline:
  
  gridSearch_analysis.py: Take the grid search output dataframe and visualize the model performance, plotting the profit as a function of each hyperparameter
   in the grid.
+ 
+ NBAdata_PCA.py: Use principal component analysis to determine the most important features and reduce the dimensionality of our data
   
  NBApredFuncs.py: Contains all of the helper functions used in the data pipeline
  
