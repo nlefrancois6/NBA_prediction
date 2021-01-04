@@ -235,6 +235,23 @@ def get_matching_game_odds(stats_df_day, season, v_team, h_team, odds_df):
     
     return v_MLodds, h_MLodds
 
+def get_matching_game_score(stats_df_day, season, v_team, h_team, odds_df):
+    """
+    Take the date and the two teams for a game in stats_df, and get the rows of odds_df 
+    containing the two teams from that game. Extract the score of each team from each row/team
+    """
+    sameday_odds_df = get_sameday_games(stats_df_day, season, odds_df)
+    
+    #Need to make sure 'Team' column is in same format
+    v_odds_row = sameday_odds_df.loc[sameday_odds_df['Team'] == v_team]
+    h_odds_row = sameday_odds_df.loc[sameday_odds_df['Team'] == h_team]
+    
+    v_score = v_odds_row['Final']
+    h_score = h_odds_row['Final']
+    
+    return v_score, h_score
+
+
 def get_season_odds_matched(stats_df_year, odds_df):
     """
     Given stats_df for a year, find the corresponding odds for every game and return
@@ -243,6 +260,8 @@ def get_season_odds_matched(stats_df_year, odds_df):
     """
     v_odds_list = []
     h_odds_list = []
+    v_score_list = []
+    h_score_list = []
     broke_count = 0
     for i in range(len(stats_df_year)):
         season = stats_df_year['Season'].iloc[i]
@@ -250,6 +269,7 @@ def get_season_odds_matched(stats_df_year, odds_df):
         v_team = stats_df_year['teamAbbr'].iloc[i]
         h_team = stats_df_year['opptAbbr'].iloc[i]
         v_odds, h_odds = get_matching_game_odds(game_date, season, v_team, h_team, odds_df)
+        v_score, h_score = get_matching_game_score(game_date, season, v_team, h_team, odds_df)
     
         if (v_odds.size == 0) or (h_odds.size == 0):
             broke_count = broke_count + 1
@@ -261,11 +281,16 @@ def get_season_odds_matched(stats_df_year, odds_df):
         else:
             v_odds_num = v_odds.iloc[0]
             h_odds_num = h_odds.iloc[0]
-
+            
+        v_score_num = v_score.iloc[0]
+        h_score_num = h_score.iloc[0]
+        
         v_odds_list.append(v_odds_num)
         h_odds_list.append(h_odds_num)
+        v_score_list.append(v_score_num)
+        h_score_list.append(h_score_num)
     
-    return v_odds_list, h_odds_list, broke_count
+    return v_odds_list, h_odds_list, v_score_list, h_score_list, broke_count
 
 def gbcModel(training_features, training_label, testing_label, testing_features, n_est, learn_r, max_d):
     #Train a Gradient Boosting Machine on the data
@@ -290,6 +315,45 @@ def rfcModel(training_features, training_label, testing_label, testing_features,
     accuracyRF = metrics.accuracy_score(testing_label, predRF)
     
     return rfc, predRF, pred_probsRF, accuracyRF
+
+def get_score_prediction(data_features, v_score_model, h_score_model):
+    """
+    Take two score prediction models and get their predictions on the games
+    in data_features
+    
+    Outputs:    
+        pred_winner: if 1, V win predicted. if 0, V loss predicted
+        
+        pred_margin: if positive, predicted margin of victory for V. if negative, 
+            predicted margin of loss for V.
+            
+        v_score_pred, h_score_pred: predicted score for each team
+            
+    """
+    v_score_pred = v_score_model.predict(data_features)
+    h_score_pred = h_score_model.predict(data_features)
+    #Get predicted winner and predicted margin on testing set
+    pred_winner = v_score_pred > h_score_pred
+    pred_margin = v_score_pred - h_score_pred
+    
+    return pred_winner, pred_margin, v_score_pred, h_score_pred
+
+def score_prediction_model(training_features, training_label_v, training_label_h, testing_features, n_estimators, max_depth):
+    """
+    Fit two regression models to predict v points and h points, which can be used to
+    predict spread, O/U, or ML
+    """
+    random_state = 1
+    #Fit a regression model to predict visitor score
+    v_score_model = ensemble.RandomForestRegressor(n_estimators = n_estimators, max_depth=max_depth, random_state=random_state)
+    v_score_model.fit(training_features, training_label_v)
+    #Fit a regression model to predict home score
+    h_score_model = ensemble.RandomForestRegressor(n_estimators = n_estimators, max_depth=max_depth, random_state=random_state)
+    h_score_model.fit(training_features, training_label_h)
+    #Get predictions for score on testing set
+    pred_winner_test, pred_margin_test, v_score_pred_test, h_score_pred_test = get_score_prediction(testing_features, v_score_model, h_score_model)
+        
+    return pred_winner_test, pred_margin_test, v_score_pred_test, h_score_pred_test, v_score_model, h_score_model
 
 def layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct):
     """
@@ -365,7 +429,22 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
         
         random_state = 1
         class_model, pred_class_test, pred_probs_class_test, accuracy_class_test = rfcModel(training_features, training_label, testing_label, testing_features, n_estimators, random_state, max_depth)
-
+    """
+    This gives different outputs than the classifier, and will go into the profit regression
+    differently. I think I should just write a whole new function to do this triple regression
+    2-layer model, but that'll require me to change the name of this function and I don't
+    want to mess with that right now.
+    elif classifier_model == 'Score Predict':
+        
+        training_label_v = training_df['V Score']
+        training_label_h = training_df['H Score']
+        
+        n_estimators = 300
+        max_depth = 5
+        
+        pred_winner_test, pred_margin_test, v_score_pred_test, h_score_pred_test, v_score_model, h_score_model = score_prediction_model(training_features, training_label_v, training_label_h, testing_features, n_estimators, max_depth)
+     """   
+        
     #Feature importance plots
     plot_features = False
     classifier_feature_importance = model_feature_importances(plot_features, class_model, class_features)
