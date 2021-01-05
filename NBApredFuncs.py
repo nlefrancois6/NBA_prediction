@@ -11,6 +11,43 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn import ensemble, metrics
 
+def get_next_day(day, month, year):
+        
+    months30 = [4,6,9,11]
+    months31 = [1,3,5,7,8,10,12]
+    leapyears = [2012, 2016, 2020]
+    if month in months30:
+        if day<30:
+            day += 1
+        else:
+            month += 1
+            day = 1
+    elif month in months31:
+        if day<31:
+            day += 1
+        else:
+            if month == 12:
+                year += 1
+                month = 1
+                day = 1
+            else:
+                month += 1
+                day = 1           
+    else:
+        if year in leapyears:
+            if day<29:
+                day += 1
+            else:
+                month += 1
+                day = 1
+        else:
+            if day<28:
+                day += 1
+            else:
+                month += 1
+                day = 1
+    return day, month, year
+
 def expected_gain(pred_prob, odds_v, odds_h):
     """
     Calculate the expected value of a bet

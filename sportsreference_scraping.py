@@ -10,19 +10,17 @@ import pandas as pd
 from datetime import datetime
 from sportsreference.nba.boxscore import Boxscore, Boxscores
 
+import NBApredFuncs as pf
 
-games = Boxscores(datetime(2020, 12, 25), datetime(2021, 1, 2))
+
+games = Boxscores(datetime(2020, 12, 22), datetime(2021, 1, 4))
 schedule_dict = games.games 
 #each entry in the dict is another dict containing all the games from a single day
 #Need to unpack this into a single dict before I can store it in a df
 year = 2020
-day = 25
+day = 22
 month = 12
 numDays = len(schedule_dict)
-
-months30 = [4,6,9,11]
-months31 = [1,3,5,7,8,10,12]
-leapyears = [2012, 2016, 2020]
 
 
 away_abbr = []
@@ -36,6 +34,7 @@ for i in range(numDays):
     date = str(month) + '-' + str(day) + '-' + str(year)
     print(date)
     
+    #might need a try-except here to avoid crashing on a day with no games
     day_dict = schedule_dict[date]
     numGames_day = len(day_dict)
     
@@ -56,34 +55,8 @@ for i in range(numDays):
             game_df = pd.concat([game_df, game_df_row])
             
     #advance the date
-    if month in months30:
-        if day<30:
-            day += 1
-        else:
-            month += 1
-            day = 1
-    elif month in months31:
-        if day<31:
-            day += 1
-        else:
-            month += 1
-            day = 1
-            if month == 12:
-                year += 1
-                month = 1
-    else:
-        if year in leapyears:
-            if day<29:
-                day += 1
-            else:
-                month += 1
-                day = 1
-        else:
-            if day<28:
-                day += 1
-            else:
-                month += 1
-                day = 1
+    day, month, year = pf.get_next_day(day, month, year)
+
     
     
 game_df['away_abbr'] = away_abbr
