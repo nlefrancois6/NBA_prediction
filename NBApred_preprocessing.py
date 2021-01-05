@@ -37,15 +37,22 @@ odds_df = pd.concat([odds_df2015, odds_df2016, odds_df2017])
 #Need to remove playoff games
 
 #Get the V and H ML values for each pair of rows and assign them to the row that will be kept
+#Do the same with the V and H score
 ML_V = []
 ML_H = []
+Score_V = []
+Score_H = []
 for i in range(len(odds_df)):
     if i%2 == 0:
         ML_V.append(odds_df['ML'].iloc[i])
         ML_H.append(odds_df['ML'].iloc[i+1])
+        Score_V.append(odds_df['Final'].iloc[i])
+        Score_H.append(odds_df['Final'].iloc[i+1])
     if i%2 == 1:
         ML_V.append(0)
         ML_H.append(0)
+        Score_V.append(0)
+        Score_H.append(0)
 """
 stats_df['ML V'] = ML_V
 stats_df['ML H'] = ML_H
@@ -79,10 +86,10 @@ stats_df['Season'] = season
 #Specify the features we want to include and use for rolling averages
 team_list = stats_df.teamAbbr.unique().tolist()
 #Note that team denotes visitors, oppt denotes home
-away_features = ['teamDayOff','teamPTS', 'teamAST','teamTO', 'teamSTL', 'teamBLK', 'teamPF', 'teamFGA','teamFG%', 'team2PA','team2P%', 'team3PA','team3P%','teamFTA','teamFT%','teamORB','teamDRB','teamTREB%','teamTS%','teamEFG%','teamOREB%','teamDREB%','teamTO%','teamSTL%','teamBLKR','teamPPS','teamFIC','teamOrtg','teamDrtg','teamEDiff','teamPlay%','teamAR','teamAST/TO','teamSTL/TO']
-home_features = ['opptDayOff','opptPTS','opptAST','opptTO', 'opptSTL', 'opptBLK', 'opptPF', 'opptFGA','opptFG%', 'oppt2PA','oppt2P%', 'oppt3PA','oppt3P%','opptFTA','opptFT%','opptORB','opptDRB','opptTREB%','opptTS%','opptEFG%','opptOREB%','opptDREB%','opptTO%','opptSTL%','opptBLKR','opptPPS','opptFIC','opptOrtg','opptDrtg','opptEDiff','opptPlay%','opptAR','opptAST/TO','opptSTL/TO']
+away_features = ['teamPTS', 'teamAST','teamTO', 'teamSTL', 'teamBLK', 'teamPF', 'teamFGA','teamFG%', 'team2PA','team2P%', 'team3PA','team3P%','teamFTA','teamFT%','teamORB','teamDRB','teamTREB%','teamTS%','teamEFG%','teamOREB%','teamDREB%','teamTO%','teamSTL%','teamBLKR','teamPPS','teamFIC','teamOrtg','teamDrtg','teamEDiff','teamPlay%','teamAR','teamAST/TO','teamSTL/TO']
+home_features = ['opptPTS','opptAST','opptTO', 'opptSTL', 'opptBLK', 'opptPF', 'opptFGA','opptFG%', 'oppt2PA','oppt2P%', 'oppt3PA','oppt3P%','opptFTA','opptFT%','opptORB','opptDRB','opptTREB%','opptTS%','opptEFG%','opptOREB%','opptDREB%','opptTO%','opptSTL%','opptBLKR','opptPPS','opptFIC','opptOrtg','opptDrtg','opptEDiff','opptPlay%','opptAR','opptAST/TO','opptSTL/TO']
 
-total_features = ['teamAbbr','opptAbbr','teamRslt','gmDate','Season'] + away_features + home_features
+total_features = ['teamAbbr','opptAbbr','teamRslt','gmDate','Season','teamDayOff', 'opptDayOff'] + away_features + home_features
 stats_df = stats_df[total_features]
 
 #Get the 2015 and 2016 seasons
@@ -91,28 +98,42 @@ stats_df2016 = stats_df.loc[stats_df['Season'] == 2016]
 stats_df2017 = stats_df.loc[stats_df['Season'] == 2017]
 
 #Get the rolling averages for our seasons of interest
-prev_num_games = 5
-stats_df2015 = pf.avg_previous_num_games(stats_df2015, prev_num_games, home_features, away_features, team_list)
-stats_df2016 = pf.avg_previous_num_games(stats_df2016, prev_num_games, home_features, away_features, team_list)
-stats_df2017 = pf.avg_previous_num_games(stats_df2017, prev_num_games, home_features, away_features, team_list)
+prev_num_games = 3
+window = 'flat' #options are 'flat' or 'gaussian'
+avg = 'season' #options are 'rolling' or 'season'
+if avg == 'rolling':
+    stats_df2015 = pf.avg_previous_num_games(stats_df2015, prev_num_games, window, home_features, away_features, team_list)
+    stats_df2016 = pf.avg_previous_num_games(stats_df2016, prev_num_games, window, home_features, away_features, team_list)
+    stats_df2017 = pf.avg_previous_num_games(stats_df2017, prev_num_games, window, home_features, away_features, team_list)
+if avg == 'season':
+    stats_df2015 = pf.avg_season(stats_df2015, home_features, away_features, team_list)
+    stats_df2016 = pf.avg_season(stats_df2016, home_features, away_features, team_list)
+    stats_df2017 = pf.avg_season(stats_df2017, home_features, away_features, team_list)
 
 #Get the odds for 2015 games
-v_odds_list_2015, h_odds_list_2015, broke_count_2015 = pf.get_season_odds_matched(stats_df2015, odds_df)
-#Add the odds as two new columns in stats_df
+v_odds_list_2015, h_odds_list_2015, v_score_list_2015, h_score_list_2015, broke_count_2015 = pf.get_season_odds_matched(stats_df2015, odds_df)
+#Add the odds as two new columns in stats_df, do the same with the score
 stats_df2015['V ML'] = v_odds_list_2015
 stats_df2015['H ML'] = h_odds_list_2015
+stats_df2015['V Score'] = v_score_list_2015
+stats_df2015['H Score'] = h_score_list_2015
 
 #Get the odds for 2016 games
-v_odds_list_2016, h_odds_list_2016, broke_count_2016 = pf.get_season_odds_matched(stats_df2016, odds_df)
-#Add the odds as two new columns in stats_df
+v_odds_list_2016, h_odds_list_2016, v_score_list_2016, h_score_list_2016, broke_count_2016 = pf.get_season_odds_matched(stats_df2016, odds_df)
+#Add the odds as two new columns in stats_df, do the same with the score
 stats_df2016['V ML'] = v_odds_list_2016
 stats_df2016['H ML'] = h_odds_list_2016
+stats_df2016['V Score'] = v_score_list_2016
+stats_df2016['H Score'] = h_score_list_2016
 
 #Get the odds for 2017 games
-v_odds_list_2017, h_odds_list_2017, broke_count_2017 = pf.get_season_odds_matched(stats_df2017, odds_df)
-#Add the odds as two new columns in stats_df
+v_odds_list_2017, h_odds_list_2017, v_score_list_2017, h_score_list_2017, broke_count_2017 = pf.get_season_odds_matched(stats_df2017, odds_df)
+#Add the odds as two new columns in stats_df, do the same with the score
 stats_df2017['V ML'] = v_odds_list_2017
 stats_df2017['H ML'] = h_odds_list_2017
+stats_df2017['V Score'] = v_score_list_2017
+stats_df2017['H Score'] = h_score_list_2017
+
 
 #Need to encode string variables with number labels
 team_mapping = dict( zip(team_list,range(len(team_list))) )
@@ -126,9 +147,13 @@ stats_df2017.replace({'opptAbbr': team_mapping},inplace=True)
 #Combine the seasons back into one df
 model_data_df = pd.concat([stats_df2015, stats_df2016, stats_df2017])
 
+#Include the number of games used for averaging as a column in the df
+n_val = [prev_num_games]*len(model_data_df)
+model_data_df['Num Games Avg'] = n_val
+
 season_list = stats_df['Season'].unique().tolist()
 season_mapping = dict( zip(season_list,range(len(season_list))) )
 model_data_df.replace({'Season': season_mapping},inplace=True)
 
 #Save the data here and export to another script to run the model
-model_data_df.to_csv('pre-processedData_n5.csv', index=False)
+model_data_df.to_csv('pre-processedData_seasonAvg_n15.csv', index=False)

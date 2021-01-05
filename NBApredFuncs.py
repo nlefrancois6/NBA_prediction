@@ -53,7 +53,7 @@ def expected_gain(pred_prob, odds_v, odds_h):
     
     return exp_gain
 
-def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, pred_probs, regression_threshold, reg_profit_exp, expectation_threshold=False):
+def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold=False):
     """
     account: total money in the account at the start
     
@@ -100,10 +100,11 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
         #Check if an expected gain threshold is set
         if expectation_threshold != False:
             #Calculate the expected gain and check if it is above the set threshold
-            exp_gain = expected_gain(pred_probs[i], moneyline_odds[i,0], moneyline_odds[i,1])
-            if exp_gain < expectation_threshold:
+            #exp_gain = expected_gain(pred_probs[i], moneyline_odds[i,0], moneyline_odds[i,1])
+            print('Expectation threshold is obsolete. Use regression threshold instead.')
+            #if exp_gain < expectation_threshold:
                 #If the threshold is not met, do not bet on the game
-                threshold_met = False
+                #threshold_met = False
         #Check if a regression_threshold is set
         if regression_threshold != False:
             #Get the expected profit from the regression model and check if it's above the threshold
@@ -111,10 +112,16 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
             if exp_gain < regression_threshold:
                 #If the threshold is not met, do not bet on the game
                 threshold_met = False
+        else:
+            exp_gain = 5
         if threshold_met == True:
             if fixed_wager == False:
-                #wager = wager_pct*account*np.exp(-exp_gain)
-                wager = wager_pct*account*exp_gain
+                #Seem to have best results with sqrt scaling
+                #wager = wager_pct*100*np.exp(-exp_gain)
+                #wager = wager_pct*100*np.log(exp_gain/4+1.0001)
+                wager = wager_pct*100*np.sqrt(exp_gain/5)
+                if wager > 20:
+                    wager = 20
             else:
                 wager = 10
             #If our prediction was correct, calculate the winnings
@@ -141,7 +148,7 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
         
     return account_runningTotal, gains_store
 
-def evaluate_model_profit(preds, pred_probs, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=False, reg_profit_exp = False):
+def evaluate_model_profit(preds, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=False, reg_profit_exp = False):
     """
     Take the predictions made by a model and a testing set with labels & the odds, calculate the
     final account balance and plot the account balance. Also return gains_store, a list of
@@ -162,8 +169,8 @@ def evaluate_model_profit(preds, pred_probs, testing_label, testing_odds_v, test
         for i in range(len(winner_prediction)):
             moneyline_odds[i,0] = testing_odds_v.iloc[i]
             moneyline_odds[i,1] = testing_odds_h.iloc[i]
-            
-    account_runningTotal, gains_store = calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, pred_probs, regression_threshold, reg_profit_exp, expectation_threshold = min_exp_gain)
+
+    account_runningTotal, gains_store = calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold = min_exp_gain)
     
     #print('Final Account Balance after ', len(account_runningTotal), ' games: ', account_runningTotal[-1])
     
@@ -193,16 +200,36 @@ def model_feature_importances(plot_features, model, features):
     
     return feature_importance
 
-def avg_previous_num_games(df, num_games, home_features, away_features, team_list):
+def avg_previous_num_games(df, num_games, window, home_features, away_features, team_list):
     # This function changes each stat to be the average of the last num_games for each team, and shifts it one so it does not include the current stats and drops the first num_games that become null
     for col in home_features:
         for team in team_list:
             #SettingWithCopyWarning raised but I don't think I care. Can take a look later
-            df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+            if window == 'flat':
+                df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+            if window == 'gauss':
+                df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
     for col in away_features:
         for team in team_list:
             #SettingWithCopyWarning raised but I don't think I care. Can take a look later
-            df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+            if window == 'flat':
+                df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+            if window == 'gauss':
+                df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
+    return df.dropna()
+
+def avg_season(df, home_features, away_features, team_list):
+    # This function changes each stat to be the season average for each team going into the game, and shifts it one so it does not include the current stats and drops the first num_games that become null
+    for col in home_features:
+        for team in team_list:
+            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+            #df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+            df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).expanding(min_periods=15).mean()
+    for col in away_features:
+        for team in team_list:
+            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+            #df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+            df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).expanding(min_periods=15).mean()
     return df.dropna()
 
 #Same-day games are not necessarily aligned between the two data sets, so I need to get
@@ -333,7 +360,14 @@ def get_score_prediction(data_features, v_score_model, h_score_model):
     v_score_pred = v_score_model.predict(data_features)
     h_score_pred = h_score_model.predict(data_features)
     #Get predicted winner and predicted margin on testing set
-    pred_winner = v_score_pred > h_score_pred
+    numGames = len(v_score_pred)
+    pred_winner = []
+    for i in range(numGames):
+        if v_score_pred[i] > h_score_pred[i]:
+            pred_winner.append('Win')
+        else:
+            pred_winner.append('Loss')
+    
     pred_margin = v_score_pred - h_score_pred
     
     return pred_winner, pred_margin, v_score_pred, h_score_pred
@@ -354,6 +388,139 @@ def score_prediction_model(training_features, training_label_v, training_label_h
     pred_winner_test, pred_margin_test, v_score_pred_test, h_score_pred_test = get_score_prediction(testing_features, v_score_model, h_score_model)
         
     return pred_winner_test, pred_margin_test, v_score_pred_test, h_score_pred_test, v_score_model, h_score_model
+
+def layered_model_doubleReg_TrainTest(training_df, testing_df, class_features, output_label, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct):
+    """
+    Train and test the classification-regression layered model
+    
+    Inputs:
+        training_df: Dataframe containing the training data
+        
+        testing_df: Dataframe containing the testing data
+        
+        class_features: array, features to use for the classifier model
+        
+        output_label: string, target output of the classifier model. Should be 'teamRslt'
+        
+        classifier_model: string, which classifier model to use
+        
+        class_params: array, hyperparameters for the classifier model
+        
+        reg_features: array, features to use for the regression model
+        
+        reg_label: string, target output of the regression model. Should be 'Classifier Profit'
+        
+        reg_params: array, hyperparameters for the regression model
+        
+        reg_threshold: float, minimum regression expectation required to place a bet
+        
+        plot_gains: boolean, if True plot the gains on the testing and validation set
+            and print the final account balance w/ # of bets placed
+            
+        fixed_wager: boolean, if True just bet 10$ on every game
+        
+        wager_pct: float, if fixed_wager==False, bet balance*wager_pct
+        
+    Outputs:
+        class_model: trained classification model object
+            
+        classifier_feature_importance: array, feature importance weightings for class_model
+            
+        profit_reg_model: trained regression model object
+            
+        testing_gains_reg: array, gain/loss from each game we bet upon
+    """
+    
+    #Define the features (input) and label (prediction output) for training set
+    training_features = training_df[class_features]
+    #training_label = training_df[output_label]
+    #training_odds_v = training_df['V ML'] #might not be needed
+    #training_odds_h = training_df['H ML'] #might not be needed
+
+    #Define features and label for testing set
+    testing_features = testing_df[class_features]
+    testing_label = testing_df[output_label]
+    testing_odds_v = testing_df['V ML']
+    testing_odds_h = testing_df['H ML']
+    
+    """
+    This gives different outputs than the classifier, and will go into the profit regression
+    differently. I think I should just write a whole new function to do this triple regression
+    2-layer model, but that'll require me to change the name of this function and I don't
+    want to mess with that right now.
+    """
+    #Train two regression models to predict V score and H score, use this to get
+    #the predicted winner and predicted margin of victory
+    training_label_v = training_df['V Score']
+    training_label_h = training_df['H Score']
+        
+    n_estimators = 300
+    max_depth = 5
+        
+    pred_winner_test, pred_margin_test, v_score_pred_test, h_score_pred_test, v_score_model, h_score_model = score_prediction_model(training_features, training_label_v, training_label_h, testing_features, n_estimators, max_depth)
+     
+    
+    min_exp_gain = False
+    plot_gains_score = False #This is hard-coded since I don't think I need it anymore
+    running_account, testing_gains = evaluate_model_profit(pred_winner_test, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains_score, dummy_odds = False)
+    if plot_gains_score:
+        plt.title('Score Regression Model Profit, Testing')
+
+
+    d = {'Classifier Profit': testing_gains, 'Pred Score V': v_score_pred_test, 'Pred Score H': h_score_pred_test, 'Prediction': pred_winner_test}
+    reg_df = pd.DataFrame(data=d)
+
+    reg_df['V ML'] = testing_odds_v.reset_index().drop(columns = ['index'])
+    reg_df['H ML'] = testing_odds_h.reset_index().drop(columns = ['index'])
+    
+    #Separate the 2nd 1/2 of the data into training and testing data (I might end up using another year of data for testing instead)
+    training_reg_df = reg_df.sample(frac=0.5, random_state=1)
+    indlist_reg=list(training_reg_df.index.values)
+
+    testing_reg_df = reg_df.copy().drop(index=indlist_reg)
+
+    #Define the features and label for training set
+    training_reg_features = training_reg_df[reg_features]
+    training_reg_label = training_reg_df[reg_label]
+
+    #Define features and label for testing set
+    testing_reg_features = testing_reg_df[reg_features]
+    #testing_reg_label = testing_reg_df[reg_label] #might not be needed
+    
+    #Create and train a regression model to predict the profit based on odds and classifier confidence
+    #n_estimators = 100
+    #max_depth = 3
+    n_estimators = reg_params[0]
+    max_depth = reg_params[1]
+    
+    random_state = 1
+    
+    profit_reg_model = ensemble.RandomForestRegressor(n_estimators = n_estimators, max_depth=max_depth, random_state=random_state)
+    #Train the model on the third 1/4 of the data
+    profit_reg_model.fit(training_reg_features, training_reg_label)
+    #Get the expected profit on the remaining 1/4 of the data
+    expected_profit_testing = profit_reg_model.predict(testing_reg_features)
+
+    #Do some dumb data formatting to get things in arrays even though alot of this doesn't get
+    #used when we use the regression threshold instead of expected value
+    preds_reg_testing = testing_reg_df['Prediction'].reset_index().drop(columns = ['index'])
+    
+    preds_reg_testing_arr = []
+    for i in range(len(preds_reg_testing)):
+        preds_reg_testing_arr.append(preds_reg_testing['Prediction'][i])
+        
+    testing_reg_odds_v = testing_reg_df['V ML'].reset_index().drop(columns = ['index'])
+    testing_reg_odds_h = testing_reg_df['H ML'].reset_index().drop(columns = ['index'])
+
+    #Evaluate the layered model profit on the remaining 1/4 of the testing data
+    
+    #Calculate the profit when we only bet on games the regression expectation favours 
+    running_account_reg, testing_gains_reg = evaluate_model_profit(preds_reg_testing_arr, testing_label, testing_reg_odds_v, testing_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_testing)
+    if plot_gains:
+        plt.title('Classification-Regression Layered Model Profit, Testing Data')
+    
+    return v_score_model, h_score_model, profit_reg_model, testing_gains_reg
+
 
 def layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct):
     """
@@ -396,7 +563,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
             
         testing_gains_reg: array, gain/loss from each game we bet upon
     """
-    
+    print(reg_threshold)
     #Define the features (input) and label (prediction output) for training set
     training_features = training_df[class_features]
     training_label = training_df[output_label]
@@ -452,7 +619,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     min_exp_gain = False
     
     plot_gains_class = False #This is hard-coded since I don't think I need it anymore
-    running_account, testing_gains = evaluate_model_profit(pred_class_test, pred_probs_class_test, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains_class, dummy_odds = False)
+    running_account, testing_gains = evaluate_model_profit(pred_class_test, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains_class, dummy_odds = False)
     if plot_gains_class:
         plt.title('Classifier Model Profit, Testing')
 
@@ -509,7 +676,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     #Evaluate the layered model profit on the remaining 1/4 of the testing data
     
     #Calculate the profit when we only bet on games the regression expectation favours 
-    running_account_reg, testing_gains_reg = evaluate_model_profit(preds_reg_testing_arr, pred_probs_reg_testing, testing_label, testing_reg_odds_v, testing_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_testing)
+    running_account_reg, testing_gains_reg = evaluate_model_profit(preds_reg_testing_arr, testing_label, testing_reg_odds_v, testing_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_testing)
     if plot_gains:
         plt.title('Classification-Regression Layered Model Profit, Testing Data')
     
@@ -521,6 +688,7 @@ def layered_model_validate(validation_data_df, class_features, output_label, cla
     layered_model_TestTrain, with class_model and profit_reg_model the two trained model
     objects that make up our layered model.
     """
+    
     #Format the validation data
     validation_class_features = validation_data_df[class_features]
     validation_label = validation_data_df[output_label]
@@ -533,7 +701,8 @@ def layered_model_validate(validation_data_df, class_features, output_label, cla
     
     min_exp_gain = False
     plot_gains_class = False
-    running_account_val, gains_val_class = evaluate_model_profit(pred_class_val, pred_probs_class_val, validation_label, validation_odds_v, validation_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains_class, dummy_odds = False)
+    fixed_wager_class = True
+    running_account_val, gains_val_class = evaluate_model_profit(pred_class_val, validation_label, validation_odds_v, validation_odds_h, min_exp_gain, wager_pct, fixed_wager_class, plot_gains_class, dummy_odds = False)
     if plot_gains_class:
         plt.title('Classifier Model Profit, Validation Data')
     
@@ -563,7 +732,7 @@ def layered_model_validate(validation_data_df, class_features, output_label, cla
     val_reg_odds_v = reg_val_df['V ML'].reset_index().drop(columns = ['index'])
     val_reg_odds_h = reg_val_df['H ML'].reset_index().drop(columns = ['index'])
     
-    running_account_reg_val, val_gains_reg = evaluate_model_profit(preds_val_reg_arr, pred_probs_reg_val, validation_label, val_reg_odds_v, val_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_val)
+    running_account_reg_val, val_gains_reg = evaluate_model_profit(preds_val_reg_arr, validation_label, val_reg_odds_v, val_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_val)
     if plot_gains:
         plt.title('Classification-Regression Layered Model Profit, Validation Data')
       
@@ -607,7 +776,10 @@ def make_new_bets(current_data_df, class_features, output_label, class_model, re
         if threshold_met == True:
             if fixed_wager == False:
                 #wager = wager_pct*account
-                wager = wager_pct*account*(exp_gain) #probably want to normalize the expected gain
+                #wager = wager_pct*account*np.log(exp_gain+1.0001)
+                wager = wager_pct*account*np.sqrt(exp_gain/5)
+                if wager > 20:
+                    wager = 0.2*account
             else:
                 wager = 10
             
