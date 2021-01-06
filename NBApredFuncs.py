@@ -90,7 +90,7 @@ def expected_gain(pred_prob, odds_v, odds_h):
     
     return exp_gain
 
-def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold=False):
+def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold=False, scrape=False):
     """
     account: total money in the account at the start
     
@@ -163,18 +163,32 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
                 wager = 10
             #If our prediction was correct, calculate the winnings
             if winner_actual[i] == winner_prediction[i]:
-                if winner_prediction[i] == 'Win':
-                    #odds[0] is odds on visitor win
-                    if moneyline_odds[i,0]>0:
-                        gain = moneyline_odds[i,0]*(wager/100)
-                    else:
-                        gain = 100*(wager/(-moneyline_odds[i,0]))
-                if winner_prediction[i] == 'Loss':
-                    #odds[1] is odds on home win
-                    if moneyline_odds[i,1]>0:
-                        gain = moneyline_odds[i,1]*(wager/100)
-                    else:
-                        gain = 100*(wager/(-moneyline_odds[i,1]))
+                if scrape:
+                    if winner_prediction[i] == 'V':
+                        #odds[0] is odds on visitor win
+                        if moneyline_odds[i,0]>0:
+                            gain = moneyline_odds[i,0]*(wager/100)
+                        else:
+                            gain = 100*(wager/(-moneyline_odds[i,0]))
+                    if winner_prediction[i] == 'H':
+                        #odds[1] is odds on home win
+                        if moneyline_odds[i,1]>0:
+                            gain = moneyline_odds[i,1]*(wager/100)
+                        else:
+                            gain = 100*(wager/(-moneyline_odds[i,1]))
+                else:
+                    if winner_prediction[i] == 'Win':
+                        #odds[0] is odds on visitor win
+                        if moneyline_odds[i,0]>0:
+                            gain = moneyline_odds[i,0]*(wager/100)
+                        else:
+                            gain = 100*(wager/(-moneyline_odds[i,0]))
+                    if winner_prediction[i] == 'Loss':
+                        #odds[1] is odds on home win
+                        if moneyline_odds[i,1]>0:
+                            gain = moneyline_odds[i,1]*(wager/100)
+                        else:
+                            gain = 100*(wager/(-moneyline_odds[i,1]))
             #If our prediction was wrong, lose the wager
             else:
                 gain = -wager
@@ -185,7 +199,7 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
         
     return account_runningTotal, gains_store
 
-def evaluate_model_profit(preds, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=False, reg_profit_exp = False):
+def evaluate_model_profit(preds, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=False, reg_profit_exp = False, scrape = False):
     """
     Take the predictions made by a model and a testing set with labels & the odds, calculate the
     final account balance and plot the account balance. Also return gains_store, a list of
@@ -194,7 +208,10 @@ def evaluate_model_profit(preds, testing_label, testing_odds_v, testing_odds_h, 
     
     account = 0
     winner_prediction = preds
-    winner_actual = testing_label['teamRslt'].array
+    if scrape:
+        winner_actual = testing_label['Winner'].array
+    else:
+        winner_actual = testing_label['teamRslt'].array
     
     #Get the ML odds for each game, either from the data or using dummy odds
     moneyline_odds = np.zeros([len(winner_prediction),2])
@@ -207,7 +224,7 @@ def evaluate_model_profit(preds, testing_label, testing_odds_v, testing_odds_h, 
             moneyline_odds[i,0] = testing_odds_v.iloc[i]
             moneyline_odds[i,1] = testing_odds_h.iloc[i]
 
-    account_runningTotal, gains_store = calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold = min_exp_gain)
+    account_runningTotal, gains_store = calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold = min_exp_gain, scrape = scrape)
     
     #print('Final Account Balance after ', len(account_runningTotal), ' games: ', account_runningTotal[-1])
     
@@ -255,18 +272,46 @@ def avg_previous_num_games(df, num_games, window, home_features, away_features, 
                 df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
     return df.dropna()
 
+def avg_previous_num_games_scrape(df, num_games, window, home_features, away_features, team_list):
+    # This function changes each stat to be the average of the last num_games for each team, and shifts it one so it does not include the current stats and drops the first num_games that become null
+    for col in home_features:
+        for team in team_list:
+            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+            if window == 'flat':
+                df[col].loc[df['home_abbr']==team] = df[col].loc[df['home_abbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+            if window == 'gauss':
+                df[col].loc[df['home_abbr']==team] = df[col].loc[df['home_abbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
+    for col in away_features:
+        for team in team_list:
+            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+            if window == 'flat':
+                df[col].loc[df['away_abbr']==team] = df[col].loc[df['away_abbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+            if window == 'gauss':
+                df[col].loc[df['away_abbr']==team] = df[col].loc[df['away_abbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
+    return df.dropna()
+
 def avg_season(df, home_features, away_features, team_list):
     # This function changes each stat to be the season average for each team going into the game, and shifts it one so it does not include the current stats and drops the first num_games that become null
     for col in home_features:
         for team in team_list:
             #SettingWithCopyWarning raised but I don't think I care. Can take a look later
-            #df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
             df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).expanding(min_periods=15).mean()
     for col in away_features:
         for team in team_list:
             #SettingWithCopyWarning raised but I don't think I care. Can take a look later
-            #df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
             df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).expanding(min_periods=15).mean()
+    return df.dropna()
+
+def avg_season_scrape(df, home_features, away_features, team_list):
+    # This function changes each stat to be the season average for each team going into the game, and shifts it one so it does not include the current stats and drops the first num_games that become null
+    for col in home_features:
+        for team in team_list:
+            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+            df[col].loc[df['home_abbr']==team] = df[col].loc[df['home_abbr']==team].shift(1).expanding(min_periods=15).mean()
+    for col in away_features:
+        for team in team_list:
+            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+            df[col].loc[df['away_abbr']==team] = df[col].loc[df['away_abbr']==team].shift(1).expanding(min_periods=15).mean()
     return df.dropna()
 
 #Same-day games are not necessarily aligned between the two data sets, so I need to get
@@ -355,6 +400,55 @@ def get_season_odds_matched(stats_df_year, odds_df):
         h_score_list.append(h_score_num)
     
     return v_odds_list, h_odds_list, v_score_list, h_score_list, broke_count
+
+def get_season_odds_matched_scrape(stats_df_year, odds_df):
+    """
+    Given stats_df for a year, find the corresponding odds for every game and return
+    the v and h odds in two arrays ready to be added to the df. Also return the number
+    of games that encountered the size==0 error.
+    """
+    v_odds_list = []
+    h_odds_list = []
+    v_score_list = []
+    h_score_list = []
+    broke_count = 0
+    for i in range(len(stats_df_year)):
+        noOdds = False
+        season = stats_df_year['Season'].iloc[i]
+        game_date = stats_df_year['gmDate'].iloc[i]
+        v_team = stats_df_year['away_abbr'].iloc[i]
+        h_team = stats_df_year['home_abbr'].iloc[i]
+        v_odds, h_odds = get_matching_game_odds(game_date, season, v_team, h_team, odds_df)
+        v_score, h_score = get_matching_game_score(game_date, season, v_team, h_team, odds_df)
+        
+        if (v_odds.size == 0) or (h_odds.size == 0):
+            broke_count = broke_count + 1
+            #Sometimes the odds have size 0. I think this is probably because the game isn't found
+            #Maybe I'll want to drop that one, but for now just setting it to a neutral odds
+            #should be fine
+            v_odds_num = 0
+            h_odds_num = 0
+        else:
+            v_odds_num = v_odds.iloc[0]
+            h_odds_num = h_odds.iloc[0]
+        
+        if (v_score.size == 0) or (h_score.size == 0):
+            noOdds = True
+        
+        if noOdds == False:
+            v_score_num = v_score.iloc[0]
+            h_score_num = h_score.iloc[0]
+        else:
+            v_score_num = 0
+            h_score_num = 0
+        
+        v_odds_list.append(v_odds_num)
+        h_odds_list.append(h_odds_num)
+        v_score_list.append(v_score_num)
+        h_score_list.append(h_score_num)
+    
+    return v_odds_list, h_odds_list, v_score_list, h_score_list, broke_count
+
 
 def gbcModel(training_features, training_label, testing_label, testing_features, n_est, learn_r, max_d):
     #Train a Gradient Boosting Machine on the data
@@ -559,7 +653,7 @@ def layered_model_doubleReg_TrainTest(training_df, testing_df, class_features, o
     return v_score_model, h_score_model, profit_reg_model, testing_gains_reg
 
 
-def layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct):
+def layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct, scrape = False):
     """
     Train and test the classification-regression layered model
     
@@ -600,7 +694,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
             
         testing_gains_reg: array, gain/loss from each game we bet upon
     """
-    print(reg_threshold)
+    
     #Define the features (input) and label (prediction output) for training set
     training_features = training_df[class_features]
     training_label = training_df[output_label]
@@ -656,7 +750,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     min_exp_gain = False
     
     plot_gains_class = False #This is hard-coded since I don't think I need it anymore
-    running_account, testing_gains = evaluate_model_profit(pred_class_test, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains_class, dummy_odds = False)
+    running_account, testing_gains = evaluate_model_profit(pred_class_test, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains_class, dummy_odds = False, scrape = scrape)
     if plot_gains_class:
         plt.title('Classifier Model Profit, Testing')
 
@@ -713,11 +807,13 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     #Evaluate the layered model profit on the remaining 1/4 of the testing data
     
     #Calculate the profit when we only bet on games the regression expectation favours 
-    running_account_reg, testing_gains_reg = evaluate_model_profit(preds_reg_testing_arr, testing_label, testing_reg_odds_v, testing_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_testing)
+    running_account_reg, testing_gains_reg = evaluate_model_profit(preds_reg_testing_arr, testing_label, testing_reg_odds_v, testing_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_testing, scrape = scrape)
     if plot_gains:
         plt.title('Classification-Regression Layered Model Profit, Testing Data')
     
     return class_model, classifier_feature_importance, profit_reg_model, testing_gains_reg
+
+
 
 def layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct):
     """
@@ -826,7 +922,7 @@ def make_new_bets(current_data_df, class_features, output_label, class_model, re
     num_bets_placed = len(wager_store)
     print(num_bets_placed, 'bets recommended out of', numGames, 'total games')
     
-    return bet_placed_index_store, wager_store
+    return bet_placed_index_store, wager_store, pred_class
     
     
     

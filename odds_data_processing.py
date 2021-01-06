@@ -8,19 +8,27 @@ Created on Mon Dec 28 18:04:30 2020
 import pandas as pd
 
 odds_columns = ['Date','VH', 'Team', 'Final', 'ML']
-odds_df = pd.read_csv('nba_odds_1617.csv')[odds_columns]
+odds_df = pd.read_csv('Data/nba_odds_1718_scrape.csv')[odds_columns]
 
 #Relabel the team column of odds_df so it matches the format of stats_df
+"""
+#for Kaggle data
 team_dict = {'Atlanta':'ATL', 'Boston':'BOS', 'Brooklyn':'BKN','Charlotte':'CHA','Chicago':'CHI','Cleveland':'CLE','Dallas':'DAL', 'Denver':'DEN','Detroit':'DET',
              'GoldenState':'GS', 'Houston':'HOU', 'Indiana':'IND','LAClippers':'LAC','LA Clippers':'LAC','LALakers':'LAL','Memphis':'MEM','Miami':'MIA','Milwaukee':'MIL','Minnesota':'MIN',
              'NewOrleans':'NO','NewYork':'NY','OklahomaCity':'OKC','Oklahoma City':'OKC','Orlando':'ORL','Philadelphia':'PHI','Phoenix':'PHO','Portland':'POR','Sacramento':'SAC',
              'SanAntonio':'SA','Toronto':'TOR','Utah':'UTA','Washington':'WAS'}
+"""
+#For scraped data
+team_dict = {'Atlanta':'ATL', 'Boston':'BOS', 'Brooklyn':'BRK','Charlotte':'CHO','Chicago':'CHI','Cleveland':'CLE','Dallas':'DAL', 'Denver':'DEN','Detroit':'DET',
+             'GoldenState':'GSW', 'Houston':'HOU', 'Indiana':'IND','LAClippers':'LAC','LA Clippers':'LAC','LALakers':'LAL','Memphis':'MEM','Miami':'MIA','Milwaukee':'MIL','Minnesota':'MIN',
+             'NewOrleans':'NOP','NewYork':'NYK','OklahomaCity':'OKC','Oklahoma City':'OKC','Orlando':'ORL','Philadelphia':'PHI','Phoenix':'PHO','Portland':'POR','Sacramento':'SAC',
+             'SanAntonio':'SAS','Toronto':'TOR','Utah':'UTA','Washington':'WAS'}
 
 for i in range(len(odds_df)):
     odds_df['Team'][i] = team_dict[odds_df['Team'][i]]
     
 #Save the relabelled odds_df back to the file so we can load it into NBApred_preprocessing
-odds_df.to_csv('nba_odds_1617.csv', index=False)
+odds_df.to_csv('Data/nba_odds_1718_scrape.csv', index=False)
     
 """
 #Read the data for historical odds
@@ -52,55 +60,3 @@ odds_df['Actual Winner'] = ML_actual
 ML_correct = ML_odds == ML_actual
 odds_df['ML Correct'] = ML_correct
 """
-
-def calc_Profit(account, wager_pct, winner_prediction, winner_actual, moneyline_odds):
-    """
-    account: total money in the account at the start
-    
-    wager_pct: the amount wagered on each game as a fraction of the account. 
-        float [0,1]
-    
-    winner_prediction: the prediction of whether visiting team will win or lose.
-        Possible values are 'Win' and 'Loss'
-    
-    winner_actual: the actual result of whether visiting team won or lost.
-        Possible values are 'Win' and 'Loss' (might need to handle 'push')
-    
-    moneyline_odds: the moneyline odds given for visiting & home teams
-        Not sure of format yet but probably (numGames,2) array with [V odds, H odds]
-        Might need to apply a conversion for negative (ie favourite) odds, or handle the negative here
-    
-    Returns gain
-    """
-    
-    account_runningTotal = [account]
-    gain = 0
-    numGames = len(winner_prediction)
-    for i in range(numGames):
-        wager = wager_pct*account
-        #If our prediction was correct, calculate the winnings
-        if winner_actual[i] == winner_prediction[i]:
-            if winner_prediction[i] == 'Win':
-                #odds[0] is odds on visitor win
-                if moneyline_odds[i,0]>0:
-                    gain = moneyline_odds[i,0]*(wager/100)
-                else:
-                    gain = 100*(wager/(-moneyline_odds[i,0]))
-            if winner_prediction[i] == 'Loss':
-                #odds[1] is odds on home win
-                if moneyline_odds[i,1]>0:
-                    gain = moneyline_odds[1]*(wager/100)
-                else:
-                    gain = 100*(wager/(-moneyline_odds[i,1]))
-        #If our prediction was wrong, lose the wager
-        else:
-            gain = -wager
-        
-        account = account + gain
-        account_runningTotal.append(account)
-        
-    return account_runningTotal
-        
-        
-        
-        
