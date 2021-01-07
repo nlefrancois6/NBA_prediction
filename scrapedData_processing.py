@@ -94,7 +94,7 @@ for i in range(num_Games):
 stats_df['Winner'] = winner
 
 #Get the desired season
-stats_df2016 = stats_df.loc[stats_df['Season'] == 2017]
+stats_df2017 = stats_df.loc[stats_df['Season'] == 2017]
 
 #Get the odds for 2015 games. Clearly there's a problem here bc I'm missing 451/1230 2015 games
 v_odds_list_2017, h_odds_list_2017, v_score_list_2017, h_score_list_2017, broke_count_2017 = pf.get_season_odds_matched_scrape(stats_df2017, odds_df)
@@ -109,9 +109,9 @@ prev_num_games = 3
 window = 'flat' #options are 'flat' or 'gaussian'
 avg = 'rolling' #options are 'rolling' or 'season'
 if avg == 'rolling':
-    stats_df2017 = pf.avg_previous_num_games_scrape(stats_df2017, prev_num_games, window, home_features, away_features, team_list)
+    stats_df2017 = pf.avg_previous_num_games(stats_df2017, prev_num_games, window, home_features, away_features, team_list, scrape=True)
 if avg == 'season':
-    stats_df2017 = pf.avg_season_scrape(stats_df2017, home_features, away_features, team_list)
+    stats_df2017 = pf.avg_season(stats_df2017, home_features, away_features, team_list, scrape=True)
 
 
 #Need to encode string variables with number labels

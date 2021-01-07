@@ -13,15 +13,19 @@ from sportsreference.nba.boxscore import Boxscore, Boxscores
 import NBApredFuncs as pf
 
 
-games = Boxscores(datetime(2017, 10, 17), datetime(2018, 4, 11))
+games = Boxscores(datetime(2020, 12, 22), datetime(2021, 1, 3))
 schedule_dict = games.games 
 #each entry in the dict is another dict containing all the games from a single day
 #Need to unpack this into a single dict before I can store it in a df
-year = 2017
-day = 17
-month = 10
+year = 2020
+day = 22
+month = 12
 numDays = len(schedule_dict)
 
+#Option to load data we already have from this year and just append the new data
+update_year = False
+if update_year:
+    game_df = pd.read_csv('Data/scraped_boxScore_2020.csv')
 
 away_abbr = []
 home_abbr = []
@@ -57,7 +61,8 @@ for i in range(numDays):
             gameDate = str(year) + mstr + str(month) + dstr + str(day)
             gmDate.append(gameDate)
             
-            if j==0 and i==0:
+            if (j==0) and (i==0) and (update_year == False):
+                #for the first game on the first day, if we aren't loading data, initialize the df
                 game_df = Boxscore(day_dict[j]['boxscore']).dataframe
             else:
                 game_df_row = Boxscore(day_dict[j]['boxscore']).dataframe
@@ -76,4 +81,4 @@ game_df['away_score'] = away_score
 game_df['home_score'] = home_score
 
 
-game_df.to_csv('Data/scraped_boxScore_2017.csv', index=False)
+game_df.to_csv('Data/scraped_boxScore_2020.csv', index=False)

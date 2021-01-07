@@ -90,7 +90,7 @@ def expected_gain(pred_prob, odds_v, odds_h):
     
     return exp_gain
 
-def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold=False, scrape=False):
+def calc_Profit(account, wager_pct, fixed_wager, wager_crit, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold=False, scrape=False):
     """
     account: total money in the account at the start
     
@@ -126,7 +126,9 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
     and gains_store, a list of the gains from each bet.
     
     """
-    
+    #wins = 1
+    #losses = 1
+    first = True
     account_runningTotal = [account]
     gains_store = []
     gain = 0
@@ -155,14 +157,30 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
             if fixed_wager == False:
                 #Seem to have best results with sqrt scaling
                 #wager = wager_pct*100*np.exp(-exp_gain)
-                #wager = wager_pct*100*np.log(exp_gain/4+1.0001)
-                wager = wager_pct*100*np.sqrt(exp_gain/5)
+                if wager_crit == 'log':
+                    wager = wager_pct*100*np.log(exp_gain/4+1.0001)
+                if wager_crit == 'kelly':
+                    #Could use these numbers as an initial value and continue to track & update them
+                    #win_pct = wins/(wins+losses)
+                    #w_l_ratio = avg_win/avg_loss
+                    win_pct = 0.56
+                    w_l_ratio = 1.28
+                    k_pct = win_pct - (1-win_pct)/w_l_ratio #0.22
+                    if first==True:
+                        print(k_pct)
+                        first = False
+                    wager = k_pct*100 #could further multiply this by some f(exp_gain)
+                    
+                if wager_crit == 'sqrt':
+                    wager = wager_pct*100*np.sqrt(exp_gain/5)
+                    
                 if wager > 20:
                     wager = 20
             else:
                 wager = 10
             #If our prediction was correct, calculate the winnings
             if winner_actual[i] == winner_prediction[i]:
+                #wins += 1
                 if scrape:
                     if winner_prediction[i] == 'V':
                         #odds[0] is odds on visitor win
@@ -191,6 +209,7 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
                             gain = 100*(wager/(-moneyline_odds[i,1]))
             #If our prediction was wrong, lose the wager
             else:
+                #losses += 1
                 gain = -wager
         
             account = account + gain
@@ -199,7 +218,7 @@ def calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actua
         
     return account_runningTotal, gains_store
 
-def evaluate_model_profit(preds, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=False, reg_profit_exp = False, scrape = False):
+def evaluate_model_profit(preds, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, wager_crit, plot_gains, dummy_odds = False, regression_threshold=False, reg_profit_exp = False, scrape = False):
     """
     Take the predictions made by a model and a testing set with labels & the odds, calculate the
     final account balance and plot the account balance. Also return gains_store, a list of
@@ -224,7 +243,7 @@ def evaluate_model_profit(preds, testing_label, testing_odds_v, testing_odds_h, 
             moneyline_odds[i,0] = testing_odds_v.iloc[i]
             moneyline_odds[i,1] = testing_odds_h.iloc[i]
 
-    account_runningTotal, gains_store = calc_Profit(account, wager_pct, fixed_wager, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold = min_exp_gain, scrape = scrape)
+    account_runningTotal, gains_store = calc_Profit(account, wager_pct, fixed_wager, wager_crit, winner_prediction, winner_actual, moneyline_odds, regression_threshold, reg_profit_exp, expectation_threshold = min_exp_gain, scrape = scrape)
     
     #print('Final Account Balance after ', len(account_runningTotal), ' games: ', account_runningTotal[-1])
     
@@ -254,24 +273,40 @@ def model_feature_importances(plot_features, model, features):
     
     return feature_importance
 
-def avg_previous_num_games(df, num_games, window, home_features, away_features, team_list):
+def avg_previous_num_games(df, num_games, window, home_features, away_features, team_list, scrape=False):
     # This function changes each stat to be the average of the last num_games for each team, and shifts it one so it does not include the current stats and drops the first num_games that become null
-    for col in home_features:
-        for team in team_list:
-            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
-            if window == 'flat':
-                df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
-            if window == 'gauss':
-                df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
-    for col in away_features:
-        for team in team_list:
-            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
-            if window == 'flat':
-                df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
-            if window == 'gauss':
-                df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
+    if scrape:
+        for col in home_features:
+            for team in team_list:
+                #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+                if window == 'flat':
+                    df[col].loc[df['home_abbr']==team] = df[col].loc[df['home_abbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+                if window == 'gauss':
+                    df[col].loc[df['home_abbr']==team] = df[col].loc[df['home_abbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
+        for col in away_features:
+            for team in team_list:
+                #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+                if window == 'flat':
+                    df[col].loc[df['away_abbr']==team] = df[col].loc[df['away_abbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+                if window == 'gauss':
+                    df[col].loc[df['away_abbr']==team] = df[col].loc[df['away_abbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
+    else: 
+        for col in home_features:
+            for team in team_list:
+                #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+                if window == 'flat':
+                    df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+                if window == 'gauss':
+                    df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
+        for col in away_features:
+            for team in team_list:
+                #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+                if window == 'flat':
+                    df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3).mean()
+                if window == 'gauss':
+                    df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
     return df.dropna()
-
+"""
 def avg_previous_num_games_scrape(df, num_games, window, home_features, away_features, team_list):
     # This function changes each stat to be the average of the last num_games for each team, and shifts it one so it does not include the current stats and drops the first num_games that become null
     for col in home_features:
@@ -289,19 +324,29 @@ def avg_previous_num_games_scrape(df, num_games, window, home_features, away_fea
             if window == 'gauss':
                 df[col].loc[df['away_abbr']==team] = df[col].loc[df['away_abbr']==team].shift(1).rolling(num_games, min_periods=3, win_type='gaussian').sum(std=1)/num_games
     return df.dropna()
-
-def avg_season(df, home_features, away_features, team_list):
+"""
+def avg_season(df, home_features, away_features, team_list, scrape=False):
     # This function changes each stat to be the season average for each team going into the game, and shifts it one so it does not include the current stats and drops the first num_games that become null
-    for col in home_features:
-        for team in team_list:
-            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
-            df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).expanding(min_periods=15).mean()
-    for col in away_features:
-        for team in team_list:
-            #SettingWithCopyWarning raised but I don't think I care. Can take a look later
-            df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).expanding(min_periods=15).mean()
+    if scrape:
+        for col in home_features:
+            for team in team_list:
+                #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+                df[col].loc[df['home_abbr']==team] = df[col].loc[df['home_abbr']==team].shift(1).expanding(min_periods=15).mean()
+        for col in away_features:
+            for team in team_list:
+                #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+                df[col].loc[df['away_abbr']==team] = df[col].loc[df['away_abbr']==team].shift(1).expanding(min_periods=15).mean()   
+    else:
+        for col in home_features:
+            for team in team_list:
+                #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+                df[col].loc[df['opptAbbr']==team] = df[col].loc[df['opptAbbr']==team].shift(1).expanding(min_periods=15).mean()
+        for col in away_features:
+            for team in team_list:
+                #SettingWithCopyWarning raised but I don't think I care. Can take a look later
+                df[col].loc[df['teamAbbr']==team] = df[col].loc[df['teamAbbr']==team].shift(1).expanding(min_periods=15).mean()
     return df.dropna()
-
+"""
 def avg_season_scrape(df, home_features, away_features, team_list):
     # This function changes each stat to be the season average for each team going into the game, and shifts it one so it does not include the current stats and drops the first num_games that become null
     for col in home_features:
@@ -313,7 +358,7 @@ def avg_season_scrape(df, home_features, away_features, team_list):
             #SettingWithCopyWarning raised but I don't think I care. Can take a look later
             df[col].loc[df['away_abbr']==team] = df[col].loc[df['away_abbr']==team].shift(1).expanding(min_periods=15).mean()
     return df.dropna()
-
+"""
 #Same-day games are not necessarily aligned between the two data sets, so I need to get
 #them manually from odds_df and then store them as two new columns in stats_df
 def get_sameday_games(stats_df_day, season, odds_df):
@@ -653,7 +698,7 @@ def layered_model_doubleReg_TrainTest(training_df, testing_df, class_features, o
     return v_score_model, h_score_model, profit_reg_model, testing_gains_reg
 
 
-def layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct, scrape = False):
+def layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scrape):
     """
     Train and test the classification-regression layered model
     
@@ -750,7 +795,8 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     min_exp_gain = False
     
     plot_gains_class = False #This is hard-coded since I don't think I need it anymore
-    running_account, testing_gains = evaluate_model_profit(pred_class_test, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains_class, dummy_odds = False, scrape = scrape)
+    fixed_wager_class = True
+    running_account, testing_gains = evaluate_model_profit(pred_class_test, testing_label, testing_odds_v, testing_odds_h, min_exp_gain, wager_pct, fixed_wager_class, wager_crit, plot_gains_class, dummy_odds = False, scrape = scrape)
     if plot_gains_class:
         plt.title('Classifier Model Profit, Testing')
 
@@ -807,7 +853,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     #Evaluate the layered model profit on the remaining 1/4 of the testing data
     
     #Calculate the profit when we only bet on games the regression expectation favours 
-    running_account_reg, testing_gains_reg = evaluate_model_profit(preds_reg_testing_arr, testing_label, testing_reg_odds_v, testing_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_testing, scrape = scrape)
+    running_account_reg, testing_gains_reg = evaluate_model_profit(preds_reg_testing_arr, testing_label, testing_reg_odds_v, testing_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, wager_crit, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_testing, scrape = scrape)
     if plot_gains:
         plt.title('Classification-Regression Layered Model Profit, Testing Data')
     
@@ -815,7 +861,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
 
 
 
-def layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct):
+def layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scrape):
     """
     Validate the layered model using an unseen dataset. Inputs are mostly the same as for 
     layered_model_TestTrain, with class_model and profit_reg_model the two trained model
@@ -835,7 +881,7 @@ def layered_model_validate(validation_data_df, class_features, output_label, cla
     min_exp_gain = False
     plot_gains_class = False
     fixed_wager_class = True
-    running_account_val, gains_val_class = evaluate_model_profit(pred_class_val, validation_label, validation_odds_v, validation_odds_h, min_exp_gain, wager_pct, fixed_wager_class, plot_gains_class, dummy_odds = False)
+    running_account_val, gains_val_class = evaluate_model_profit(pred_class_val, validation_label, validation_odds_v, validation_odds_h, min_exp_gain, wager_pct, fixed_wager_class, wager_crit, plot_gains_class, dummy_odds = False, scrape = scrape)
     if plot_gains_class:
         plt.title('Classifier Model Profit, Validation Data')
     
@@ -865,13 +911,13 @@ def layered_model_validate(validation_data_df, class_features, output_label, cla
     val_reg_odds_v = reg_val_df['V ML'].reset_index().drop(columns = ['index'])
     val_reg_odds_h = reg_val_df['H ML'].reset_index().drop(columns = ['index'])
     
-    running_account_reg_val, val_gains_reg = evaluate_model_profit(preds_val_reg_arr, validation_label, val_reg_odds_v, val_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_val)
+    running_account_reg_val, val_gains_reg = evaluate_model_profit(preds_val_reg_arr, validation_label, val_reg_odds_v, val_reg_odds_h, min_exp_gain, wager_pct, fixed_wager, wager_crit, plot_gains, dummy_odds = False, regression_threshold=reg_threshold, reg_profit_exp = expected_profit_val, scrape = scrape)
     if plot_gains:
         plt.title('Classification-Regression Layered Model Profit, Validation Data')
       
     return val_gains_reg
 
-def make_new_bets(current_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, fixed_wager, wager_pct, account):
+def make_new_bets(current_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, fixed_wager, wager_pct, wager_crit, account):
     """
     Given data for some new games (current_data_df) and the trained layered model, 
     output the games that we should bet on and how much money to bet
@@ -908,18 +954,30 @@ def make_new_bets(current_data_df, class_features, output_label, class_model, re
             threshold_met = False
         if threshold_met == True:
             if fixed_wager == False:
-                #wager = wager_pct*account
-                #wager = wager_pct*account*np.log(exp_gain+1.0001)
-                wager = wager_pct*account*np.sqrt(exp_gain/5)
+                if wager_crit == 'log':
+                    wager = wager_pct*account*np.log(exp_gain/4+1.0001)
+                if wager_crit == 'kelly':
+                    #Could use these numbers as an initial value and continue to track & update them
+                    #win_pct = wins/(wins+losses)
+                    #w_l_ratio = avg_win/avg_loss
+                    win_pct = 0.56
+                    w_l_ratio = 1.28
+                    k_pct = win_pct - (1-win_pct)/w_l_ratio #0.22
+                    wager = k_pct*account #could further multiply this by some f(exp_gain) 
+                if wager_crit == 'sqrt':
+                    wager = wager_pct*account*np.sqrt(exp_gain/5)
+                    
                 if wager > 20:
-                    wager = 0.2*account
+                    wager = 20
             else:
                 wager = 10
             
             bet_placed_index_store.append(i)
             wager_store.append(wager)
-    
-    num_bets_placed = len(wager_store)
+        else:
+            wager_store.append(0)
+            
+    num_bets_placed = len(bet_placed_index_store)
     print(num_bets_placed, 'bets recommended out of', numGames, 'total games')
     
     return bet_placed_index_store, wager_store, pred_class
