@@ -25,9 +25,11 @@ else:
     data2017_df = pd.read_csv('Data/pre-processedData_scraped1718_n3.csv')
     data2020_df = pd.read_csv('Data/pre-processedData_scraped2021_n3.csv')
     
-    half2016 = int(len(data2016_df)/2)
-    training_df = pd.concat([data2015_df, data2016_df[:half2016]])
-    testing_df = data2016_df[half2016:]
+    half2015 = int(len(data2015_df)/2)
+    #training_df = pd.concat([data2015_df, data2016_df, data2017_df])
+    #testing_df = data2017_df
+    training_df = pd.concat([data2015_df, data2015_df[:half2015]])
+    testing_df = data2015_df[half2015:]
     validation_data_df = data2017_df
     
     #model_data_df = pd.concat([data2015_df, data2016_df])
@@ -72,7 +74,7 @@ else:
     home_features = ['home_pace','home_assist_percentage','home_block_percentage','home_defensive_rating','home_defensive_rebound_percentage','home_defensive_rebounds','home_field_goal_percentage','home_free_throw_attempts','home_free_throw_percentage','home_offensive_rebounds','home_personal_fouls','home_steal_percentage','home_steals','home_three_point_attempt_rate','home_three_point_field_goal_attempts','home_three_point_field_goal_percentage','home_total_rebound_percentage','home_turnover_percentage','home_turnovers']
     
     
-    class_features = away_features + home_features + ['away_score','home_score']
+    class_features = away_features + home_features
     output_label = ['Winner']
 
 
@@ -113,11 +115,11 @@ if validation_test:
     val_gains_reg = pf.layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scraped)
 
 #Given some new games, determine what bets to place
-new_bets = True
+new_bets = False
 if new_bets:
     account = 100
     fixed_wager = False
-    reg_threshold = 10
+    reg_threshold = 0.1
     todays_index = 0 #index of first game today
     #Analyze the upcoming games and decide when/how much to bet
     current_data_df = data2020_df[todays_index:]
