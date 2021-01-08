@@ -11,7 +11,7 @@ import pandas as pd
 import NBApredFuncs as pf
 
 drop_columns = ['away_minutes_played','away_points','away_losses','date','home_minutes_played','home_points','home_wins','location','losing_name','winner','winning_name','losing_abbr','winning_abbr']
-stats_df = pd.read_csv('Data/scraped_boxScore_2017.csv')
+stats_df = pd.read_csv('Data/scraped_boxScore_2018.csv')
 stats_df = stats_df.drop(columns = drop_columns)
 
 #Could add the moneyline odds to the df here so the dropped games don't complicate things later
@@ -19,19 +19,22 @@ odds_columns = ['Date','VH', 'Team', 'Final', 'ML']
 odds_df2015 = pd.read_csv('Data/nba_odds_1516_scrape.csv')[odds_columns]
 odds_df2016 = pd.read_csv('Data/nba_odds_1617_scrape.csv')[odds_columns]
 odds_df2017 = pd.read_csv('Data/nba_odds_1718_scrape.csv')[odds_columns]
+odds_df2018 = pd.read_csv('Data/nba_odds_1819_scrape.csv')[odds_columns]
 odds_df2020 = pd.read_csv('Data/nba_odds_2021_scrape.csv')[odds_columns]
 
 #Add year columns and concatenate the odds dfs
 year2015 = [2015]*len(odds_df2015)
 year2016 = [2016]*len(odds_df2016)
 year2017 = [2017]*len(odds_df2017)
+year2018 = [2018]*len(odds_df2018)
 year2020 = [2020]*len(odds_df2020)
 odds_df2015['Year'] = year2015
 odds_df2016['Year'] = year2016
 odds_df2017['Year'] = year2017
+odds_df2018['Year'] = year2018
 odds_df2020['Year'] = year2020
 
-odds_df = pd.concat([odds_df2015, odds_df2016, odds_df2017, odds_df2020])
+odds_df = pd.concat([odds_df2015, odds_df2016, odds_df2017, odds_df2018, odds_df2020])
 
 #Get the V and H ML values for each pair of rows and assign them to the row that will be kept
 #Do the same with the V and H score
@@ -94,33 +97,33 @@ for i in range(num_Games):
 stats_df['Winner'] = winner
 
 #Get the desired season
-stats_df2017 = stats_df.loc[stats_df['Season'] == 2017]
+stats_df2018 = stats_df.loc[stats_df['Season'] == 2018]
 
 #Get the odds for 2015 games. Clearly there's a problem here bc I'm missing 451/1230 2015 games
-v_odds_list_2017, h_odds_list_2017, v_score_list_2017, h_score_list_2017, broke_count_2017 = pf.get_season_odds_matched_scrape(stats_df2017, odds_df)
+v_odds_list_2018, h_odds_list_2018, v_score_list_2018, h_score_list_2018, broke_count_2018 = pf.get_season_odds_matched_scrape(stats_df2018, odds_df)
 #Add the odds as two new columns in stats_df
-stats_df2017['V ML'] = v_odds_list_2017
-stats_df2017['H ML'] = h_odds_list_2017
+stats_df2018['V ML'] = v_odds_list_2018
+stats_df2018['H ML'] = h_odds_list_2018
 
-stats_df2017 = stats_df2017[stats_df2017['V ML'] != 0]
+stats_df2018 = stats_df2018[stats_df2018['V ML'] != 0]
 #Get the rolling averages for our seasons of interest
 prev_num_games = 3
 
 window = 'flat' #options are 'flat' or 'gaussian'
 avg = 'rolling' #options are 'rolling' or 'season'
 if avg == 'rolling':
-    stats_df2017 = pf.avg_previous_num_games(stats_df2017, prev_num_games, window, home_features, away_features, team_list, scrape=True)
+    stats_df2018 = pf.avg_previous_num_games(stats_df2018, prev_num_games, window, home_features, away_features, team_list, scrape=True)
 if avg == 'season':
-    stats_df2017 = pf.avg_season(stats_df2017, home_features, away_features, team_list, scrape=True)
+    stats_df2018 = pf.avg_season(stats_df2018, home_features, away_features, team_list, scrape=True)
 
 
 #Need to encode string variables with number labels
 team_mapping = dict( zip(team_list,range(len(team_list))) )
-stats_df2017.replace({'away_abbr': team_mapping},inplace=True)
-stats_df2017.replace({'home_abbr': team_mapping},inplace=True)
+stats_df2018.replace({'away_abbr': team_mapping},inplace=True)
+stats_df2018.replace({'home_abbr': team_mapping},inplace=True)
 
 #Combine the seasons back into one df
-model_data_df = pd.concat([stats_df2017])
+model_data_df = pd.concat([stats_df2018])
 
 #Include the number of games used for averaging as a column in the df
 n_val = [prev_num_games]*len(model_data_df)
@@ -131,6 +134,6 @@ season_mapping = dict( zip(season_list,range(len(season_list))) )
 model_data_df.replace({'Season': season_mapping},inplace=True)
 
 #Save the data here and export to another script to run the model
-model_data_df.to_csv('Data/pre-processedData_scraped1718_n3.csv', index=False)
+model_data_df.to_csv('Data/pre-processedData_scraped1819_n3.csv', index=False)
 
 

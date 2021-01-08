@@ -497,7 +497,7 @@ def get_season_odds_matched_scrape(stats_df_year, odds_df):
 
 def gbcModel(training_features, training_label, testing_label, testing_features, n_est, learn_r, max_d):
     #Train a Gradient Boosting Machine on the data
-    gbc = ensemble.GradientBoostingClassifier(n_estimators = n_est, learning_rate = learn_r, max_depth=max_d)
+    gbc = ensemble.GradientBoostingClassifier(n_estimators = n_est, learning_rate = learn_r, max_depth=max_d, subsample=1.0)
     gbc.fit(training_features, training_label)
 
     #Predict the outcome from our test set and evaluate the prediction accuracy for each model

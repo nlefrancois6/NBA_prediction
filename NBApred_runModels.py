@@ -23,16 +23,22 @@ else:
     data2015_df = pd.read_csv('Data/pre-processedData_scraped1516_n3.csv')
     data2016_df = pd.read_csv('Data/pre-processedData_scraped1617_n3.csv')
     data2017_df = pd.read_csv('Data/pre-processedData_scraped1718_n3.csv')
+    data2018_df = pd.read_csv('Data/pre-processedData_scraped1819_n3.csv')
     data2020_df = pd.read_csv('Data/pre-processedData_scraped2021_n3.csv')
     
-    half2015 = int(len(data2015_df)/2)
+    #best results w randomized train/test split of 2016+2017, or train 2017 test 2018
+    training_df = data2017_df
+    testing_df = data2018_df
+    validation_data_df = data2016_df
+    #half2016 = int(len(data2016_df)/2)
     #training_df = pd.concat([data2015_df, data2016_df, data2017_df])
     #testing_df = data2017_df
-    training_df = pd.concat([data2015_df, data2015_df[:half2015]])
-    testing_df = data2015_df[half2015:]
-    validation_data_df = data2017_df
+    #training_df = pd.concat([data2015_df, data2016_df[:half2016]])
+    #testing_df = data2016_df[half2016:]
     
-    #model_data_df = pd.concat([data2015_df, data2016_df])
+    
+    #model_data_df = pd.concat([data2017_df, data2016_df])
+    #validation_data_df = data2018_df
     #model_data_df = data_all_years.loc[data_all_years['Season'] == 0]
     
     #validation_data_df = data_all_years.loc[data_all_years['Season'] == 1]
@@ -109,27 +115,32 @@ print('win%:', winpct)
 print('R:', R)
 
 #Validate the model using the unseen 2017 data
-validation_test = False
+validation_test = True
 if validation_test:
     fixed_wager = False
     val_gains_reg = pf.layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scraped)
 
 #Given some new games, determine what bets to place
-new_bets = False
+new_bets = True
 if new_bets:
     account = 100
     fixed_wager = False
     reg_threshold = 0.1
-    todays_index = 0 #index of first game today
+    todays_index = 8 #index of first game today
     #Analyze the upcoming games and decide when/how much to bet
     current_data_df = data2020_df[todays_index:]
     bet_placed_indices, recommended_wagers, recommended_bets = pf.make_new_bets(current_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, fixed_wager, wager_pct, wager_crit, account)
     
     #load the bet tracking csv, append the new bets, and save back to csv
-    #data2015_df = pd.read_csv('Data/bet_tracking2021.csv')
     bet_tracking_df = current_data_df.copy()        
     bet_tracking_df['Recommended Wager'] = recommended_wagers
     bet_tracking_df['Recommended Winner'] = recommended_bets
-    bet_tracking_df.to_csv('Data/bet_tracking2021.csv', index=False)
+    
+    update_bet_tracking = False
+    if update_bet_tracking:
+        bet_tracking_df_old = pd.read_csv('Data/bet_tracking2021.csv')
+        bet_tracking_df = pd.concat([bet_tracking_df_old, bet_tracking_df])
+        
+    #bet_tracking_df.to_csv('Data/bet_tracking2021.csv', index=False)
     
     
