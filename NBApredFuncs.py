@@ -10,6 +10,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn import ensemble, metrics
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder
+import tensorflow as tf
 
 def get_next_day(day, month, year):
         
@@ -496,6 +499,12 @@ def get_season_odds_matched_scrape(stats_df_year, odds_df):
 
 
 def gbcModel(training_features, training_label, testing_label, testing_features, n_est, learn_r, max_d):
+    #Normalize the data
+    scaler = StandardScaler()
+    scaler.fit(training_features)
+    scaler.transform(training_features)
+    scaler.transform(testing_features)
+    
     #Train a Gradient Boosting Machine on the data
     gbc = ensemble.GradientBoostingClassifier(n_estimators = n_est, learning_rate = learn_r, max_depth=max_d, subsample=1.0)
     gbc.fit(training_features, training_label)
@@ -508,7 +517,13 @@ def gbcModel(training_features, training_label, testing_label, testing_features,
     return gbc, predGB, pred_probsGB, accuracyGB
 
 def rfcModel(training_features, training_label, testing_label, testing_features, n_est, rs, max_d):
-    #Train a Gradient Boosting Machine on the data
+    #Normalize the data
+    scaler = StandardScaler()
+    scaler.fit(training_features)
+    scaler.transform(training_features)
+    scaler.transform(testing_features)
+    
+    #Train a Random Forest on the data
     rfc = ensemble.RandomForestClassifier(n_estimators = n_est, max_depth=max_d, random_state = rs)
     rfc.fit(training_features, training_label)
 
@@ -518,6 +533,45 @@ def rfcModel(training_features, training_label, testing_label, testing_features,
     accuracyRF = metrics.accuracy_score(testing_label, predRF)
     
     return rfc, predRF, pred_probsRF, accuracyRF
+
+def kerasModel(training_features, training_label, testing_label, testing_features):
+    encoder = LabelEncoder()
+    encoder.fit(training_label)
+    training_label_enc = encoder.transform(training_label)
+    testing_label_enc = encoder.transform(testing_label)
+    
+    scaler = StandardScaler()
+    scaler.fit(training_features)
+    scaler.transform(training_features)
+    scaler.transform(testing_features)
+    
+    
+    model = tf.keras.models.Sequential([
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(60, activation='relu'),
+      tf.keras.layers.Dense(30, activation='relu'),
+      tf.keras.layers.Dropout(0.2),
+      tf.keras.layers.Dense(1, activation='sigmoid')
+    ])
+    
+    model.compile(optimizer='adam',
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'])
+    
+    model.fit(training_features.values, training_label_enc, epochs=10)
+    accuracy = model.evaluate(testing_features, testing_label_enc)
+    
+    pred_probs = model.predict(testing_features)
+    preds = []
+    for i in range(len(pred_probs)):
+        if pred_probs[i]>0.5:
+            #not sure if it will always get encoded the same way. Should be a way to get the map from the encoder directly
+            preds.append(['V'])
+        else:
+            preds.append(['H'])
+    
+    
+    return model, preds, pred_probs, accuracy
 
 def get_score_prediction(data_features, v_score_model, h_score_model):
     """
@@ -772,6 +826,9 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
         
         random_state = 1
         class_model, pred_class_test, pred_probs_class_test, accuracy_class_test = rfcModel(training_features, training_label, testing_label, testing_features, n_estimators, random_state, max_depth)
+    elif classifier_model == 'Keras':
+        #Probably need to handle the label encoding/decoding in other places
+        class_model, pred_class_test, pred_probs_class_test, accuracy_class_test = kerasModel(training_features, training_label, testing_label, testing_features)
     """
     This gives different outputs than the classifier, and will go into the profit regression
     differently. I think I should just write a whole new function to do this triple regression
@@ -790,7 +847,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
         
     #Feature importance plots
     plot_features = False
-    classifier_feature_importance = model_feature_importances(plot_features, class_model, class_features)
+    #classifier_feature_importance = model_feature_importances(plot_features, class_model, class_features)
 
     min_exp_gain = False
     
@@ -800,9 +857,14 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     if plot_gains_class:
         plt.title('Classifier Model Profit, Testing')
 
-
-    d = {'Classifier Profit': testing_gains, 'Pred Probs V': pred_probs_class_test[:,0], 'Pred Probs H': pred_probs_class_test[:,1], 'Prediction': pred_class_test}
+    if classifier_model == 'Keras':
+        pred_probs_h = 1 - pred_probs_class_test
+        d = {'Classifier Profit': testing_gains, 'Pred Probs V': pred_probs_class_test[:,0], 'Pred Probs H': pred_probs_h[:,0], 'Prediction': pred_class_test}
+    else:
+        #print(pred_probs_class_test.shape)
+        d = {'Classifier Profit': testing_gains, 'Pred Probs V': pred_probs_class_test[:,0], 'Pred Probs H': pred_probs_class_test[:,1], 'Prediction': pred_class_test}
     reg_df = pd.DataFrame(data=d)
+    #print(reg_df.shape)
 
     reg_df['V ML'] = testing_odds_v.reset_index().drop(columns = ['index'])
     reg_df['H ML'] = testing_odds_h.reset_index().drop(columns = ['index'])
@@ -857,7 +919,7 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     if plot_gains:
         plt.title('Classification-Regression Layered Model Profit, Testing Data')
     
-    return class_model, classifier_feature_importance, profit_reg_model, testing_gains_reg
+    return class_model, profit_reg_model, testing_gains_reg
 
 
 

@@ -13,14 +13,14 @@ from sportsreference.nba.boxscore import Boxscore, Boxscores
 import NBApredFuncs as pf
 
 #Scrape the new games
-update_games = True
+update_games = False
 if update_games:
-    games = Boxscores(datetime(2021, 1, 6), datetime(2021, 1, 7))
+    games = Boxscores(datetime(2021, 1, 8), datetime(2021, 1, 9))
     schedule_dict = games.games 
     #each entry in the dict is another dict containing all the games from a single day
     #Need to unpack this into a single dict before I can store it in a df
     year = 2021
-    day = 6
+    day = 8
     month = 1
     numDays = len(schedule_dict)
     
@@ -31,7 +31,6 @@ if update_games:
     home_score = []
     gmDate = []
     boxscore = []
-    #need to adapt it so this can loop through a whole year
     for i in range(numDays):
         date = str(month) + '-' + str(day) + '-' + str(year)
         print(date)
@@ -83,12 +82,13 @@ if update_games:
     if update_year:
         old_game_df = pd.read_csv('Data/scraped_boxScore_2020.csv')
         game_df = pd.concat([old_game_df, game_df])
-    
-    game_df.to_csv('Data/scraped_boxScore_2020.csv', index=False)
+    save_games = True
+    if save_games:
+        game_df.to_csv('Data/scraped_boxScore_2020.csv', index=False)
 else:
     game_df = pd.read_csv('Data/scraped_boxScore_2020.csv')
 
-preprocess = False
+preprocess = True
 if preprocess:
     #Process the scraped data & odds data
     drop_columns = ['away_minutes_played','away_points','away_losses','date','home_minutes_played','home_points','home_wins','location','losing_name','winner','winning_name','losing_abbr','winning_abbr']

@@ -84,18 +84,23 @@ else:
     output_label = ['Winner']
 
 
-class_params = [300, 0.01, 5] 
-classifier_model = 'GB'
+#class_params = [300, 0.01, 5] or [80, 3]
+#For optimized model
+#class_params = [80, 3]
+#For original model
+class_params = [300, 5]
+classifier_model = 'RF'
 
 #Select the regression features & model hyperparams
 reg_features = ['V ML', 'H ML', 'Pred Probs V', 'Pred Probs H']
 reg_label = ['Classifier Profit']
 
-reg_params = [300, 5]   
+#300, 5 or 100, 5. Seems to be fairly insensitive to these
+reg_params = [100, 5]   
 reg_threshold = 0.1
 
 #Train and test the layered model
-class_model, classifier_feature_importance, profit_reg_model, testing_gains_reg = pf.layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scraped)
+class_model, profit_reg_model, testing_gains_reg = pf.layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scraped)
 
 wins = 0
 win_tally = 0
@@ -121,7 +126,7 @@ if validation_test:
     val_gains_reg = pf.layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scraped)
 
 #Given some new games, determine what bets to place
-new_bets = True
+new_bets = False
 if new_bets:
     account = 100
     fixed_wager = False
@@ -135,12 +140,14 @@ if new_bets:
     bet_tracking_df = current_data_df.copy()        
     bet_tracking_df['Recommended Wager'] = recommended_wagers
     bet_tracking_df['Recommended Winner'] = recommended_bets
-    
+
     update_bet_tracking = False
     if update_bet_tracking:
-        bet_tracking_df_old = pd.read_csv('Data/bet_tracking2021.csv')
+        #bet_tracking_df_old = pd.read_csv('Data/bet_tracking2021_optModel.csv')
+        bet_tracking_df_old = pd.read_csv('Data/bet_tracking2021_originalModel.csv')
         bet_tracking_df = pd.concat([bet_tracking_df_old, bet_tracking_df])
         
-    #bet_tracking_df.to_csv('Data/bet_tracking2021.csv', index=False)
+    #bet_tracking_df.to_csv('Data/bet_tracking2021_optModel.csv', index=False)
+    #bet_tracking_df.to_csv('Data/bet_tracking2021_originalModel.csv', index=False)
     
     
