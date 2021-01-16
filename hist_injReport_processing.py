@@ -57,8 +57,8 @@ if get_daily_report:
     team_d = []
     name_d = []
     
-    year = 2010
-    day = 3
+    year = 2019
+    day = 1
     month = 10
     
     if month > 9:
@@ -96,11 +96,14 @@ if get_daily_report:
         dstr = '-0'
     gmDate = str(year) + mstr + str(month) + dstr + str(day)
     
+    print('Compiling daily injury report for each day in requested range...')
     #Not sure how to get the number of days, I guess I could do this for start date to end date
     #of each season
-    numDays = 50
+    numDays = 164
     #For each day
     for i in range(numDays):
+        #print(gmDate)
+        
         inj_day = inj_list.loc[inj_list['Date'] == gmDate]
         
         n_o = []
@@ -135,7 +138,7 @@ if get_daily_report:
         
         #Drop all of the 'in' players
         if len(ind_i) > 0:
-            inj_current.drop(ind_i)
+            inj_current = inj_current.drop(ind_i).reset_index().drop(columns = ['index'])
         
         for l in range(len(inj_current)):
             n = inj_current['Name'].iloc[l]
@@ -159,7 +162,18 @@ if get_daily_report:
         gmDate = str(year) + mstr + str(month) + dstr + str(day)
         
 
+    print('List compiled.')
     d_inj_report = {'Date': date_d, 'Name': name_d, 'Team': team_d}
     inj_report_hist = pd.DataFrame(data=d_inj_report)
     
-    inj_list.to_csv('Data/injuries_historical_processed.csv', index=False)
+    inj_report_hist.to_csv('Data/injuries_historical_dailyReport_2019.csv', index=False)
+    
+    """
+    Now I'll need to calculate the fraction of team production missing for each team on each day
+    In order to do that, I'll need to use the method in roster_testing.py to get the season 
+    statistics of every player from each year, extract the injury report on each day, and
+    calculate the missing production for each team on that day.
+    I'll need to load the preprocessed data containing all the games in our historical data sets,
+    then for each game get the missing production of each team on that day. Then save this expanded
+    data set back into a csv which can be used to train the model.
+    """
