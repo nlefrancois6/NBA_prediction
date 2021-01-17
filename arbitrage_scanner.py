@@ -73,11 +73,11 @@ for i in range(numGames):
         ind_nan.append(i)
 
 d_odds = {'away_abbr': v_team_list, 'home_abbr': h_team_list, 'V ML': v_odds_list, 'H ML': h_odds_list}  
-odds_df = pd.DataFrame(data=d_odds)
+odds_df_oneRow = pd.DataFrame(data=d_odds)
 
 #Drop games with no odds (postponed, etc)
 if len(ind_nan) > 0:
-    odds_df = odds_df.drop(ind_nan).reset_index().drop(columns = ['index'])
+    odds_df_oneRow = odds_df_oneRow.drop(ind_nan).reset_index().drop(columns = ['index'])
 
 #Relabel team names to abbreviations
 team_dict = {'Atlanta':'ATL', 'Boston':'BOS', 'Brooklyn':'BRK','Charlotte':'CHO','Chicago':'CHI','Cleveland':'CLE','Dallas':'DAL', 'Denver':'DEN','Detroit':'DET',
@@ -85,9 +85,37 @@ team_dict = {'Atlanta':'ATL', 'Boston':'BOS', 'Brooklyn':'BRK','Charlotte':'CHO'
              'New Orleans':'NOP','New York':'NYK','Oklahoma City':'OKC','Orlando':'ORL','Philadelphia':'PHI','Phoenix':'PHO','Portland':'POR','Sacramento':'SAC',
              'San Antonio':'SAS','Toronto':'TOR','Utah':'UTA','Washington':'WAS'}
 
-for i in range(len(odds_df)):
-    odds_df['away_abbr'][i] = team_dict[odds_df['away_abbr'][i]]
-    odds_df['home_abbr'][i] = team_dict[odds_df['home_abbr'][i]]
+for i in range(len(odds_df_oneRow)):
+    odds_df_oneRow['away_abbr'][i] = team_dict[odds_df_oneRow['away_abbr'][i]]
+    odds_df_oneRow['home_abbr'][i] = team_dict[odds_df_oneRow['home_abbr'][i]]
+
+#Put the odds into the two-row format
+gmDate = 117
+odds = []
+team = []
+date = []
+vh = []
+final = []
+for i in range(len(odds_df_oneRow)):
+    date.append(gmDate)
+    date.append(gmDate)
+    
+    vh.append('V')
+    vh.append('H')
+    
+    odds.append(odds_df_oneRow['V ML'][i])
+    odds.append(odds_df_oneRow['H ML'][i])
+    
+    team.append(odds_df_oneRow['away_abbr'][i])
+    team.append(odds_df_oneRow['home_abbr'][i])
+    
+    final.append(0)
+    final.append(0)
+   
+d_final = {'Date': date, 'VH': vh, 'Team': team, 'Final': final, 'ML': odds}  
+odds_df_oneRow = pd.DataFrame(data=d_final)
+    
+    
     
 """
 Incorporating this into the inseason scraping pipeline:
