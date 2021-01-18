@@ -13,6 +13,411 @@ from sklearn import ensemble, metrics
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import LabelEncoder
 import tensorflow as tf
+from sportsreference.nba.roster import Roster
+import math
+
+import requests
+from bs4 import BeautifulSoup
+import datetime
+from datetime import date
+import time
+from pandas import DataFrame
+
+def reformat_scraped_odds(todays_odds, gmDate, verbose):
+    """
+    Take the odds for today obtained from the SBRscrape function and put them
+    into the odds format we want (i.e. nba_odds_2021_scrape.csv)
+    """
+
+    #Get the average odds for each team in each game
+    v_team_list = []
+    h_team_list = []
+    v_odds_list = []
+    h_odds_list = []
+    ind_nan = []
+    numGames = int(len(todays_odds)/2)
+    for i in range(numGames):
+        v_odds_row = todays_odds.iloc[2*i]
+        h_odds_row = todays_odds.iloc[2*i + 1]
+        
+        v_team = v_odds_row['team']
+        h_team = h_odds_row['team']
+        
+        
+        v_odds = []
+        h_odds = []
+        
+        for s in range(len(v_odds_row)):
+            if (type(v_odds_row[s]) is np.float64) and (math.isnan(v_odds_row[s]) is False):
+                v_odds.append(v_odds_row[s])
+            if type(h_odds_row[s]) is np.float64 and (math.isnan(v_odds_row[s]) is False):
+                h_odds.append(h_odds_row[s])
+        
+        avg_v_odds = np.mean(v_odds)
+        avg_h_odds = np.mean(h_odds)
+        
+        #Check which team is favoured and check for arbitrage opportunities
+        if (avg_v_odds < 0) and (avg_h_odds > 0):
+            if verbose:
+                print(v_team, '(away) favourite. Average odds', avg_v_odds)
+                print(h_team, '(home) underdog. Average odds', avg_h_odds)
+            
+            if np.abs(min(v_odds)) < np.abs(max(h_odds)):
+                if verbose:
+                    print('Arbitrage Opportunity for', v_team,'vs',h_team)
+            
+        elif (avg_h_odds < 0) and (avg_v_odds > 0):
+            if verbose:
+                print(h_team, '(home) favourite. Average odds', avg_h_odds)
+                print(v_team, '(away) underdog. Average odds', avg_v_odds)
+            
+            if np.abs(min(h_odds)) < np.abs(max(v_odds)):
+                if verbose:
+                    print('Arbitrage Opportunity for', v_team,'vs',h_team)
+        
+        v_team_list.append(v_team)
+        h_team_list.append(h_team)
+        v_odds_list.append(avg_v_odds)
+        h_odds_list.append(avg_h_odds)
+        
+        if math.isnan(avg_v_odds) or math.isnan(avg_h_odds):
+            ind_nan.append(i)
+    
+    d_odds = {'away_abbr': v_team_list, 'home_abbr': h_team_list, 'V ML': v_odds_list, 'H ML': h_odds_list}  
+    odds_df_oneRow = pd.DataFrame(data=d_odds)
+    
+    #Drop games with no odds (postponed, etc)
+    if len(ind_nan) > 0:
+        odds_df_oneRow = odds_df_oneRow.drop(ind_nan).reset_index().drop(columns = ['index'])
+    
+    #Relabel team names to abbreviations
+    team_dict = {'Atlanta':'ATL', 'Boston':'BOS', 'Brooklyn':'BRK','Charlotte':'CHO','Chicago':'CHI','Cleveland':'CLE','Dallas':'DAL', 'Denver':'DEN','Detroit':'DET',
+                 'GoldenState':'GSW', 'Houston':'HOU', 'Indiana':'IND','L.A. Clippers':'LAC','L.A. Lakers':'LAL','Memphis':'MEM','Miami':'MIA','Milwaukee':'MIL','Minnesota':'MIN',
+                 'New Orleans':'NOP','New York':'NYK','Oklahoma City':'OKC','Orlando':'ORL','Philadelphia':'PHI','Phoenix':'PHO','Portland':'POR','Sacramento':'SAC',
+                 'San Antonio':'SAS','Toronto':'TOR','Utah':'UTA','Washington':'WAS'}
+    
+    for i in range(len(odds_df_oneRow)):
+        odds_df_oneRow['away_abbr'][i] = team_dict[odds_df_oneRow['away_abbr'][i]]
+        odds_df_oneRow['home_abbr'][i] = team_dict[odds_df_oneRow['home_abbr'][i]]
+    
+    #Put the odds into the two-row format
+    odds = []
+    team = []
+    date = []
+    vh = []
+    final = []
+    for i in range(len(odds_df_oneRow)):
+        date.append(gmDate)
+        date.append(gmDate)
+        
+        vh.append('V')
+        vh.append('H')
+        
+        odds.append(odds_df_oneRow['V ML'][i])
+        odds.append(odds_df_oneRow['H ML'][i])
+        
+        team.append(odds_df_oneRow['away_abbr'][i])
+        team.append(odds_df_oneRow['home_abbr'][i])
+        
+        final.append(0)
+        final.append(0)
+       
+    d_final = {'Date': date, 'VH': vh, 'Team': team, 'Final': final, 'ML': odds}  
+    odds_df_twoRows = pd.DataFrame(data=d_final)
+    
+    return odds_df_oneRow, odds_df_twoRows
+
+def get_stat_contributions(abbr_list, year_num, year_str):
+    """
+    Get the statistical contribution of every player on every team's roster during the specified season
+    and calculate the total statistical contribution of each team's roster.
+    
+    Inputs:
+        abbr_list: list containing abbreviation of each team
+        year_num: season year as an int
+        year_str: season year as a str
+
+    Outputs: 
+        league_players_df: df containing the list of player stat contributions
+        team_totals_df: df containing the total statistical contributions of each team's roster
+    """
+    names = []
+    teams = []
+    minutes = []
+    games = []
+    usages = []
+    winShareO = []
+    winShareD = []
+    values = []
+    
+    games_teams = []
+    minutes_teams = []
+    usages_teams = []
+    winShareO_teams = []
+    winShareD_teams = []
+    values_teams = []
+    #This for-loop will likely be the slowest component, probably want to package this into a func and maybe put it in another script
+    for team_abbr in abbr_list: 
+        print('Scraping statistical contributions for', team_abbr,'...') 
+        team_roster = Roster(team_abbr, str(year_num))
+        player_list = team_roster.players
+       
+        p = 0
+        games_team = 0
+        minutes_team = 0
+        usages_team = 0
+        winShareO_team = 0
+        winShareD_team = 0
+        values_team = 0
+        for player in player_list:
+            names.append(player.name)
+            teams.append(team_abbr)
+            #Note: if the player hasn't played yet this season, this will return the previous season which may not be a good representation
+            #Need to check if the player has past stats
+            career_df = player_list[p].dataframe
+            if len(career_df) > 0:
+                years_played = career_df.index.values
+                year_found = False
+                for i in range(len(years_played)):
+                    if years_played[i][0] == year_str:
+                        year_found = True
+                        year_ind = i
+                if year_found:
+                    player_df = career_df.iloc[year_ind]
+                
+                    g = player_df['games_played']
+                    if g is not None:
+                        #Average the minutes and win shares by # games played
+                        m = player_df['minutes_played']/g
+                        #If m == 0 then u == None, so we need to change it to a zero
+                        if m != 0:
+                            u = player_df['usage_percentage']
+                        else:
+                            u = 0
+                        wSO = player_df['offensive_win_shares']/g
+                        wSD = player_df['offensive_win_shares']/g
+                        #not sure if value needs to be averaged per game
+                        v = player_df['value_over_replacement_player']
+                    else:
+                        g = 0
+                        m = 0
+                        u = 0
+                        wSO = 0
+                        wSD = 0
+                        v = 0
+                else:
+                    g = 0
+                    m = 0
+                    u = 0
+                    wSO = 0
+                    wSD = 0
+                    v = 0
+                
+                if math.isnan(g):
+                    g = 0
+                    m = 0
+                    u = 0
+                    wSO = 0
+                    wSD = 0
+                    v = 0
+                games.append(g)
+                minutes.append(m)
+                usages.append(u)
+                winShareO.append(wSO)
+                winShareD.append(wSD)
+                values.append(v)
+    
+                #Track the total quantity for the team
+                games_team += g
+                minutes_team += m
+                usages_team += u
+                winShareO_team += wSO
+                winShareD_team += wSD
+                values_team += v
+            if len(career_df) == 0:
+                g = 0
+                m = 0
+                u = 0
+                wSO = 0
+                wSD = 0
+                v = 0
+                
+                games.append(g)
+                minutes.append(m)
+                usages.append(u)
+                winShareO.append(wSO)
+                winShareD.append(wSD)
+                values.append(v)
+            
+            p += 1
+    
+        games_teams.append(games_team)
+        minutes_teams.append(minutes_team)
+        usages_teams.append(usages_team)
+        winShareO_teams.append(winShareO_team)
+        winShareD_teams.append(winShareD_team)
+        values_teams.append(values_team)
+    
+    
+    d_league = {'name': names, 'team': teams, 'games_played': games, 'minutes_played': minutes, 'usage_percentage': usages, 'offensive_win_shares': winShareO, 'defensive_win_shares': winShareD, 'value_over_replacement_player': values}  
+    league_players_df = pd.DataFrame(data=d_league)
+    
+    d_teams = {'team': abbr_list,'games_played': games_teams,'minutes_played': minutes_teams, 'usage_percentage': usages_teams, 'offensive_win_shares': winShareO_teams, 'defensive_win_shares': winShareD_teams, 'value_over_replacement_player': values_teams}
+    team_totals_df = pd.DataFrame(data=d_teams)
+    
+    return league_players_df, team_totals_df
+
+def get_injLoss_daily_report(injYear_df, league_players_df, team_totals_df, abbr_list):
+    """
+    On each day in the season, get the list of injured players from each team and calculate 
+    the fraction of the team's total statistics which are missing with the loss of those players
+    
+    Inputs:
+        injYear_df: df containing the list of injured players for every day in the season
+        league_players_df: df containing the list of player stat contributions
+        team_totals_df: df containing the total statistical contributions of each team's roster
+        abbr_list: list containing abbreviation of each team
+    
+    Output:
+        team_injLoss_df: df containing, for every team on every day in the season, the 
+        fraction of total team production which is missing due to injury
+    """
+    
+    date_list = injYear_df.Date.unique()
+    
+    team = []
+    date_team = []
+    g_frac_team = []
+    m_frac_team = []
+    u_frac_team = []
+    wSO_frac_team = []
+    wSD_frac_team = []
+    v_frac_team = []
+    
+    print('Calculating injury losses for each day...')
+    for date in date_list:
+        injDay_df = injYear_df.loc[injYear_df['Date'] == date]
+        #print(date)
+        for team_abbr in abbr_list:
+            #Get list of injured players on the team
+            injuries_team = injDay_df.loc[injDay_df['Team'] == team_abbr]
+            
+            g_inj = 0
+            m_inj = 0
+            u_inj = 0
+            wSO_inj = 0
+            wSD_inj = 0
+            v_inj = 0
+            for i in range(len(injuries_team)):
+                #Get the player name & stats from the injury report
+                name = injuries_team['Name'].iloc[i]
+                #Need to check to make sure the player's name exists in league_players_df and handle if not. Simplest way is to not count them.
+                inj_player = league_players_df.loc[league_players_df['name'] == name]
+                if len(inj_player) > 0:
+                    g_inj += inj_player['games_played'].iloc[0]
+                    m_inj += inj_player['minutes_played'].iloc[0]
+                    u_inj += inj_player['usage_percentage'].iloc[0]
+                    wSO_inj += inj_player['offensive_win_shares'].iloc[0]
+                    wSD_inj += inj_player['defensive_win_shares'].iloc[0]
+                    v_inj += inj_player['value_over_replacement_player'].iloc[0]
+            
+            #Calculate the fraction of team stats missing due to injury
+            team_tots = team_totals_df.loc[team_totals_df['team'] == team_abbr]
+            g_frac = g_inj/team_tots['games_played'].iloc[0]
+            m_frac = m_inj/team_tots['minutes_played'].iloc[0]
+            u_frac = u_inj/team_tots['usage_percentage'].iloc[0]
+            wSO_frac = wSO_inj/team_tots['offensive_win_shares'].iloc[0]
+            wSD_frac = wSD_inj/team_tots['defensive_win_shares'].iloc[0]
+            v_frac = v_inj/team_tots['value_over_replacement_player'].iloc[0]
+            
+            if math.isnan(g_frac):
+                g_frac = 0
+                m_frac = 0
+                u_frac = 0
+                wSO_frac = 0
+                wSD_frac = 0
+                v_frac = 0
+            
+            team.append(team_abbr)
+            date_team.append(date)
+            g_frac_team.append(g_frac)
+            m_frac_team.append(m_frac)
+            u_frac_team.append(u_frac)
+            wSO_frac_team.append(wSO_frac)
+            wSD_frac_team.append(wSD_frac)
+            v_frac_team.append(v_frac)
+    
+    d_inj = {'date': date_team, 'team': team,'games_played': g_frac_team,'minutes_played': m_frac_team, 'usage_percentage': u_frac_team, 'offensive_win_shares': wSO_frac_team, 'defensive_win_shares': wSD_frac_team, 'value_over_replacement_player': v_frac_team}
+    team_injLoss_df = pd.DataFrame(data=d_inj)
+    
+    return team_injLoss_df
+
+def merge_injury_data(dataYear_df, team_injLoss_df):
+    """
+    For each game in dataYear_df, get the statistics from team_injLoss_df corresponding to both the
+    home and away teams. Add these statistics as new columns to dataYear_df and save the resultant df
+    
+    Inputs:
+        dataYear_df: df containing the team statistics for each game, which will be used as
+        features in our model
+        team_injLoss_df: df containing, for every team on every day in the season, the 
+        fraction of total team production which is missing due to injury
+        
+    Output:
+        dataYear_merged_df: df containing the team and injury statistics for each game, ready
+        to be used to train and test our model
+    """
+    
+    dataYear_merged_df = dataYear_df.copy()
+    
+    m_a = []
+    u_a = []
+    wSO_a = []
+    wSD_a = []
+    v_a = []
+    m_h = []
+    u_h = []
+    wSO_h = []
+    wSD_h = []
+    v_h = []
+    print('Merging injury data into historical features set...')
+    for i in range(len(dataYear_merged_df)):
+        if i%100 == 0:
+            print(i,'of',len(dataYear_merged_df),'games merged')
+            
+        away_abbr = dataYear_merged_df['away_abbr'][i]
+        home_abbr = dataYear_merged_df['home_abbr'][i]
+        gmDate = dataYear_merged_df['gmDate'][i]
+        
+        injDay_df = team_injLoss_df.loc[team_injLoss_df['date'] == gmDate]
+        away_row = injDay_df.loc[injDay_df['team'] == away_abbr]
+        home_row = injDay_df.loc[injDay_df['team'] == home_abbr]
+        
+        m_a.append(away_row['minutes_played'].iloc[0])
+        u_a.append(away_row['usage_percentage'].iloc[0])
+        wSO_a.append(away_row['offensive_win_shares'].iloc[0])
+        wSD_a.append(away_row['defensive_win_shares'].iloc[0])
+        v_a.append(away_row['value_over_replacement_player'].iloc[0])
+        
+        m_h.append(home_row['minutes_played'].iloc[0])
+        u_h.append(home_row['usage_percentage'].iloc[0])
+        wSO_h.append(home_row['offensive_win_shares'].iloc[0])
+        wSD_h.append(home_row['defensive_win_shares'].iloc[0])
+        v_h.append(home_row['value_over_replacement_player'].iloc[0])
+        
+    dataYear_merged_df['away_minutes_played_inj']  = m_a
+    dataYear_merged_df['away_usage_percentage_inj']  = u_a
+    dataYear_merged_df['away_offensive_win_shares_inj']  = wSO_a
+    dataYear_merged_df['away_defensive_win_shares_inj']  = wSD_a
+    dataYear_merged_df['away_value_over_replacement_inj']  = v_a
+    
+    dataYear_merged_df['home_minutes_played_inj']  = m_h
+    dataYear_merged_df['home_usage_percentage_inj']  = u_h
+    dataYear_merged_df['home_offensive_win_shares_inj']  = wSO_h
+    dataYear_merged_df['home_defensive_win_shares_inj']  = wSD_h
+    dataYear_merged_df['home_value_over_replacement_inj']  = v_h
+    
+    return dataYear_merged_df
 
 def get_next_day(day, month, year):
         
@@ -176,6 +581,19 @@ def calc_Profit(account, wager_pct, fixed_wager, wager_crit, winner_prediction, 
                     
                 if wager_crit == 'sqrt':
                     wager = wager_pct*100*np.sqrt(exp_gain/5)
+                
+                if winner_prediction[i] == 'H':
+                    if (moneyline_odds[i,1] < -120) and (wager > 4):
+                        #print('rescale', wager)
+                        scale_frac = -100/moneyline_odds[i,1]
+                        wager = wager*scale_frac
+                        #print('to', wager)
+                elif winner_prediction[i] == 'V':
+                    if (moneyline_odds[i,0] < -120) and (wager > 4):
+                        #print('rescale', wager)
+                        scale_frac = -100/moneyline_odds[i,0]
+                        wager = wager*scale_frac
+                        
                     
                 if wager > 20:
                     wager = 20
@@ -497,6 +915,310 @@ def get_season_odds_matched_scrape(stats_df_year, odds_df):
     
     return v_odds_list, h_odds_list, v_score_list, h_score_list, broke_count
 
+def soup_url(type_of_line, tdate = str(date.today()).replace('-','')):
+## get html code for odds based on desired line type and date
+    if type_of_line == 'Spreads':
+        url_addon = ''
+    elif type_of_line == 'ML':
+        url_addon = 'money-line/'
+    elif type_of_line == 'Totals':
+        url_addon = 'totals/'
+    # elif type_of_line == '1H':
+        # url_addon = '1st-half/'
+    # elif type_of_line == '1HRL':
+        # url_addon = 'pointspread/1st-half/'
+    # elif type_of_line == '1Htotal':
+        # url_addon = 'totals/1st-half/'
+    else:
+        print("Wrong url_addon")
+    url = 'https://classic.sportsbookreview.com/betting-odds/nba-basketball/' + url_addon + '?date=' + tdate
+    #now = datetime.datetime.now()
+    raw_data = requests.get(url)
+    soup_big = BeautifulSoup(raw_data.text, 'html.parser')
+    soup = soup_big.find_all('div', id='OddsGridModule_5')[0]
+    timestamp = time.strftime("%H:%M:%S")
+    return soup, timestamp
+
+def parse_and_write_data(soup, date, time, not_ML = True):
+## Parse HTML to gather line data by book
+    def book_line(book_id, line_id, homeaway):
+        ## Get Line info from book ID
+        line = soup.find_all('div', attrs = {'class':'el-div eventLine-book', 'rel':book_id})[line_id].find_all('div')[homeaway].get_text().strip()
+        return line
+    '''
+    BookID  BookName
+    238     Pinnacle
+    19      5Dimes
+    93      Bookmaker
+    1096    BetOnline
+    169     Heritage
+    123     BetDSI
+    999996  Bovada
+    139     Youwager
+    999991  SIA
+    '''
+    if not_ML:
+        df = DataFrame(
+                columns=('key','date','time',
+                         'team','opp_team','pinnacle_line','pinnacle_odds',
+                         '5dimes_line','5dimes_odds',
+                         'heritage_line','heritage_odds',
+                         'bovada_line','bovada_odds',
+                         'betonline_line','betonline_odds'))
+    else:
+        df = DataFrame(
+            columns=('key','date','time',
+                     'team',
+                     'opp_team',
+                     'pinnacle','5dimes',
+                     'heritage','bovada','betonline'))
+    counter = 0
+    number_of_games = len(soup.find_all('div', attrs = {'class':'el-div eventLine-rotation'}))
+    for i in range(0, number_of_games):
+        A = []
+        H = []
+        print('Game',str(i+1)+'/'+str(number_of_games))
+        
+        ## Gather all useful data from unique books
+        # consensus_data = 	soup.find_all('div', 'el-div eventLine-consensus')[i].get_text()
+        info_A = 		        soup.find_all('div', attrs = {'class':'el-div eventLine-team'})[i].find_all('div')[0].get_text().strip()
+        # hyphen_A =              info_A.find('-')
+        # paren_A =               info_A.find("(")
+        team_A =                info_A
+        # pitcher_A =             info_A[hyphen_A + 2 : paren_A - 1]
+        # hand_A =                info_A[paren_A + 1 : -1]
+        ## get line/odds info for unique book. Need error handling to account for blank data
+        try:
+            pinnacle_A = 	    book_line('238', i, 0)
+        except IndexError:
+            pinnacle_A = ''
+        try:
+            fivedimes_A = 	    book_line('19', i, 0)
+        except IndexError:
+            fivedimes_A = ''
+        try:
+            heritage_A =        book_line('169', i, 0)
+        except IndexError:
+            heritage_A = ''
+        try:
+            bovada_A = 		    book_line('999996', i, 0)
+        except IndexError:
+            bovada_A = ''
+        try:
+            betonline_A = 		book_line('1096', i, 0)
+        except IndexError:
+            betonline_A = ''
+        info_H = 		        soup.find_all('div', attrs = {'class':'el-div eventLine-team'})[i].find_all('div')[1].get_text().strip()
+        # hyphen_H =              info_H.find('-')
+        # paren_H =               info_H.find("(")
+        team_H =                info_H
+        # pitcher_H =             info_H[hyphen_H + 2 : paren_H - 1]
+        # hand_H =                info_H[paren_H + 1 : -1]
+        try:
+            pinnacle_H = 	    book_line('238', i, 1)
+        except IndexError:
+            pinnacle_H = ''
+        try:
+            fivedimes_H = 	    book_line('19', i, 1)
+        except IndexError:
+            fivedimes_H = ''
+        try:
+            heritage_H = 	    book_line('169', i, 1)
+        except IndexError:
+            heritage_H = '.'
+        try:
+            bovada_H = 		    book_line('999996', i, 1)
+        except IndexError:
+            bovada_H = '.'
+        try:
+            betonline_H = 		book_line('1096', i, 1)
+        except IndexError:
+            betonline_H = ''
+        if team_H ==   'Detroit':
+            team_H =   'Detroit'
+        elif team_H == 'Indiana':
+            team_H =   'Indiana'
+        elif team_H == 'Brooklyn':
+            team_H =   'Brooklyn'
+        elif team_H == 'L.A. Lakers':
+            team_H =   'L.A. Lakers'
+        elif team_H == 'Washington':
+            team_H =   'Washington'
+        elif team_H == 'Miami':
+            team_H =   'Miami'
+        elif team_H == 'Minnesota':
+            team_H =   'Minnesota'
+        elif team_H == 'Chicago':
+            team_H =   'Chicago'
+        elif team_H == 'Oklahoma City':
+            team_H =   'Oklahoma City'
+        if team_A ==   'New Orleans':
+            team_A =   'New Orleans'
+        elif team_A == 'Houston':
+            team_A =   'Houston'
+        elif team_A == 'Dallas':
+            team_A =   'Dallas'
+        elif team_A == 'Cleveland':
+            team_A =   'Cleveland'
+        elif team_A == 'L.A. Clippers':
+            team_A =   'L.A. Clippers'
+        elif team_A == 'Golden State':
+            team_A =   'Golden State'
+        elif team_A == 'Denver':
+            team_A =   'Denver'
+        elif team_A == 'Boston':
+            team_A =   'Boston'
+        elif team_A == 'Milwaukee':
+            team_A =   'Milwaukee'            
+       # A.append(str(date) + '_' + team_A.replace(u'\xa0',' ') + '_' + team_H.replace(u'\xa0',' '))
+        A.append(date)
+        A.append(time)
+        A.append('away')
+        A.append(team_A)
+        # A.append(pitcher_A)
+        # A.append(hand_A)
+        A.append(team_H)
+        # A.append(pitcher_H)
+        # A.append(hand_H)
+        if not_ML:
+            pinnacle_A = pinnacle_A.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            pinnacle_A_line = pinnacle_A[:pinnacle_A.find(' ')]
+            pinnacle_A_odds = pinnacle_A[pinnacle_A.find(' ') + 1:]
+            A.append(pinnacle_A_line)
+            A.append(pinnacle_A_odds)
+            fivedimes_A = fivedimes_A.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            fivedimes_A_line = fivedimes_A[:fivedimes_A.find(' ')]
+            fivedimes_A_odds = fivedimes_A[fivedimes_A.find(' ') + 1:]
+            A.append(fivedimes_A_line)
+            A.append(fivedimes_A_odds)
+            heritage_A = heritage_A.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            heritage_A_line = heritage_A[:heritage_A.find(' ')]
+            heritage_A_odds = heritage_A[heritage_A.find(' ') + 1:]
+            A.append(heritage_A_line)
+            A.append(heritage_A_odds)
+            bovada_A = bovada_A.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            bovada_A_line = bovada_A[:bovada_A.find(' ')]
+            bovada_A_odds = bovada_A[bovada_A.find(' ') + 1:]
+            A.append(bovada_A_line)
+            A.append(bovada_A_odds)
+            betonline_A = betonline_A.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            betonline_A_line = betonline_A[:betonline_A.find(' ')]
+            betonline_A_odds = betonline_A[betonline_A.find(' ') + 1:]
+            A.append(betonline_A_line)
+            A.append(betonline_A_odds)
+        else:
+            A.append(pinnacle_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            A.append(fivedimes_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            A.append(heritage_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            A.append(bovada_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            A.append(betonline_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+        #H.append(str(date) + '_' + team_A.replace(u'\xa0',' ') + '_' + team_H.replace(u'\xa0',' '))
+        H.append(date)
+        H.append(time)
+        H.append('home')
+        H.append(team_H)
+        # H.append(pitcher_H)
+        # H.append(hand_H)
+        H.append(team_A)
+        # H.append(pitcher_A)
+        # H.append(hand_A)
+        if not_ML:
+            pinnacle_H = pinnacle_H.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            pinnacle_H_line = pinnacle_H[:pinnacle_H.find(' ')]
+            pinnacle_H_odds = pinnacle_H[pinnacle_H.find(' ') + 1:]
+            H.append(pinnacle_H_line)
+            H.append(pinnacle_H_odds)
+            fivedimes_H = fivedimes_H.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            fivedimes_H_line = fivedimes_H[:fivedimes_H.find(' ')]
+            fivedimes_H_odds = fivedimes_H[fivedimes_H.find(' ') + 1:]
+            H.append(fivedimes_H_line)
+            H.append(fivedimes_H_odds)
+            heritage_H = heritage_H.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            heritage_H_line = heritage_H[:heritage_H.find(' ')]
+            heritage_H_odds = heritage_H[heritage_H.find(' ') + 1:]
+            H.append(heritage_H_line)
+            H.append(heritage_H_odds)
+            bovada_H = bovada_H.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            bovada_H_line = bovada_H[:bovada_H.find(' ')]
+            bovada_H_odds = bovada_H[bovada_H.find(' ') + 1:]
+            H.append(bovada_H_line)
+            H.append(bovada_H_odds)
+            betonline_H = betonline_H.replace(u'\xa0',' ').replace(u'\xbd','.5')
+            betonline_H_line = betonline_H[:betonline_H.find(' ')]
+            betonline_H_odds = betonline_H[betonline_H.find(' ') + 1:]
+            H.append(betonline_H_line)
+            H.append(betonline_H_odds)
+        else:
+            H.append(pinnacle_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            H.append(fivedimes_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            H.append(heritage_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            H.append(bovada_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            H.append(betonline_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+        
+	##For testing purposes..
+	#for j in range(len(A)):
+		#print 'Test: ', A[j]
+
+        ## Take data from A and H (lists) and put them into DataFrame
+        df.loc[counter]   = ([A[j] for j in range(len(A))])
+        df.loc[counter+1] = ([H[j] for j in range(len(H))])
+        counter += 2
+    return df
+
+def select_and_rename(df, text):
+    ## Select only useful column names from a DataFrame
+    ## Rename column names so that when merged, each df will be unique 
+    if text[-2:] == 'ml':
+        df = df[['key','time','team','opp_team',
+                 'pinnacle','5dimes','heritage','bovada','betonline']]
+    ## Change column names to make them unique
+        df.columns = ['key',text+'_time','team','opp_team',
+                      text+'_PIN',text+'_FD',text+'_HER',text+'_BVD',text+'_BOL']
+    else:
+        df = df[['key','time','team','opp_team',
+                 'pinnacle_line','pinnacle_odds',
+                 '5dimes_line','5dimes_odds',
+                 'heritage_line','heritage_odds',
+                 'bovada_line','bovada_odds',
+                 'betonline_line','betonline_odds']]
+        df.columns = ['key',text+'_time','team','opp_team',
+                      text+'_PIN_line',text+'_PIN_odds',
+                      text+'_FD_line',text+'_FD_odds',
+                      text+'_HER_line',text+'_HER_odds',
+                      text+'_BVD_line',text+'_BVD_odds',
+                      text+'_BOL_line',text+'_BOL_odds']
+    return df
+
+def scrape_SBR_odds(filename):
+    """
+    Execute the functions from SBRscrape needed to get the ML odds from various
+    books and save them to the specified file location as a csv.
+    """
+    # connectTor()
+
+    ## Get today's lines
+    todays_date = str(date.today()).replace('-','')
+    ## change todays_date to be whatever date you want to pull in the format 'yyyymmdd'
+    ## One could force user input and if results in blank, revert to today's date. 
+    # todays_date = '20140611'
+
+    ## store BeautifulSoup info for parsing
+    soup_ml, time_ml = soup_url('ML', todays_date)
+    print("getting today's MoneyLine odds")
+    
+    #### Each df_xx creates a data frame for a bet type
+    print("writing today's MoneyLine odds")
+    df_ml = parse_and_write_data(soup_ml, todays_date, time_ml, not_ML = False)
+    # print(df_ml)
+    ## Change column names to make them unique
+    df_ml.columns = ['key','date','ml_time','team',
+                     'opp_team',
+                     'ml_PIN','ml_FD','ml_HER','ml_BVD','ml_BOL']    
+
+    ## Merge all DataFrames together to allow for simple printout
+    write_df = df_ml
+    
+    write_df.to_csv(filename, index=False)#, header = False)
 
 def gbcModel(training_features, training_label, testing_label, testing_features, n_est, learn_r, max_d):
     #Normalize the data
@@ -1031,6 +1753,8 @@ def make_new_bets(current_data_df, class_features, output_label, class_model, re
                     
                 if wager > 20:
                     wager = 20
+                if pred_class[i] == ['H']:
+                    print('H')
             else:
                 wager = 10
             

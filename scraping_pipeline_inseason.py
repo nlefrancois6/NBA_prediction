@@ -15,14 +15,20 @@ import NBApredFuncs as pf
 #Scrape the new games
 update_games = False
 if update_games:
-    games = Boxscores(datetime(2021, 1, 8), datetime(2021, 1, 9))
+    games = Boxscores(datetime(2021, 1, 16), datetime(2021, 1, 17))
     schedule_dict = games.games 
     #each entry in the dict is another dict containing all the games from a single day
     #Need to unpack this into a single dict before I can store it in a df
     year = 2021
-    day = 8
+    day = 16
     month = 1
     numDays = len(schedule_dict)
+    
+    #Get date format for odds scraping
+    if day > 9:
+        gmDate_today = str(month) + str(day)
+    else:
+        gmDate_today = str(month) + '0' + str(day)
     
     
     away_abbr = []
@@ -61,6 +67,8 @@ if update_games:
                 if (j==0) and (i==0):
                     #for the first game on the first day,  initialize the df
                     game_df = Boxscore(day_dict[j]['boxscore']).dataframe
+                    #Also save the initial date format
+                    gmDate_boxscore = gameDate
                 else:
                     game_df_row = Boxscore(day_dict[j]['boxscore']).dataframe
                     game_df = pd.concat([game_df, game_df_row])
@@ -94,9 +102,36 @@ if preprocess:
     drop_columns = ['away_minutes_played','away_points','away_losses','date','home_minutes_played','home_points','home_wins','location','losing_name','winner','winning_name','losing_abbr','winning_abbr']
     game_df = game_df.drop(columns = drop_columns).reset_index().drop(columns = ['index'])
     
-    #Could add the moneyline odds to the df here so the dropped games don't complicate things later
-    odds_columns = ['Date','VH', 'Team', 'Final','ML']
-    odds_df = pd.read_csv('Data/nba_odds_2021_scrape.csv')[odds_columns]
+    SBR_scrape = False
+    if SBR_scrape:
+        verbose = False
+        
+        filename = 'odds_data_SBR.csv'
+        pf.scrape_SBR_odds(filename)
+        todays_odds = pd.read_csv(filename)
+        
+        #Get odds_df_twoRows, which contains the odds for today in the proper format
+        odds_df_oneRow, odds_df_twoRows = pf.reformat_scraped_odds(todays_odds, gmDate_today, verbose)
+        #Load the existing scraped odds list
+        odds_old_df = pd.read_csv('nba_odds_2021_scrape.csv')
+        #Add today's odds to the list
+        odds_combined_df = pd.concat([odds_old_df, odds_df_twoRows])
+        
+        #Get the rows needed to add new games to game_df, corresponding to the new games in odds_df
+        blankRow = pd.read_csv('Data/blank_row.csv')
+        game_df_newRows = blankRow.copy()
+        for i in range(len(odds_df_oneRow)):
+            game_df_newRows['away_abbr'].iloc[i] = odds_df_oneRow['away_abbr'][i]
+            game_df_newRows['home_abbr'].iloc[i] = odds_df_oneRow['home_abbr'][i]
+            game_df_newRows['gmDate'].iloc[i] = gmDate_boxscore
+            
+            if i < (len(odds_df_oneRow)-1):
+                game_df_newRows = pd.concat([game_df_newRows, blankRow])
+        #Add the new rows into game_df, ready to be matched with the odds
+        game_df = pd.concat([game_df, game_df_newRows])
+    else:
+        odds_columns = ['Date','VH', 'Team', 'Final','ML']
+        odds_df = pd.read_csv('Data/nba_odds_2021_scrape.csv')[odds_columns]
     """
     https://www.sportsbookreview.com/betting-odds/nba-basketball/money-line/?date=20200106
     Need to manually get the odds from this url for each date (YYYYMMDD format) to fill in the
