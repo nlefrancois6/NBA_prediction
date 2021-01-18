@@ -56,6 +56,13 @@ def reformat_scraped_odds(todays_odds, gmDate, verbose):
         avg_v_odds = np.mean(v_odds)
         avg_h_odds = np.mean(h_odds)
         
+        #Sometimes a team has both + and - odds for a game, resulting in abs(avg_odds)<100
+        #If this occurs, replace the avg_odds with 100
+        if np.abs(avg_v_odds) < 100:
+            avg_v_odds = 100
+        if np.abs(avg_h_odds) < 100:
+            avg_h_odds = 100
+        
         #Check which team is favoured and check for arbitrage opportunities
         if (avg_v_odds < 0) and (avg_h_odds > 0):
             if verbose:
@@ -92,7 +99,7 @@ def reformat_scraped_odds(todays_odds, gmDate, verbose):
     
     #Relabel team names to abbreviations
     team_dict = {'Atlanta':'ATL', 'Boston':'BOS', 'Brooklyn':'BRK','Charlotte':'CHO','Chicago':'CHI','Cleveland':'CLE','Dallas':'DAL', 'Denver':'DEN','Detroit':'DET',
-                 'GoldenState':'GSW', 'Houston':'HOU', 'Indiana':'IND','L.A. Clippers':'LAC','L.A. Lakers':'LAL','Memphis':'MEM','Miami':'MIA','Milwaukee':'MIL','Minnesota':'MIN',
+                 'Golden State':'GSW', 'Houston':'HOU', 'Indiana':'IND','L.A. Clippers':'LAC','L.A. Lakers':'LAL','Memphis':'MEM','Miami':'MIA','Milwaukee':'MIL','Minnesota':'MIN',
                  'New Orleans':'NOP','New York':'NYK','Oklahoma City':'OKC','Orlando':'ORL','Philadelphia':'PHI','Phoenix':'PHO','Portland':'POR','Sacramento':'SAC',
                  'San Antonio':'SAS','Toronto':'TOR','Utah':'UTA','Washington':'WAS'}
     
