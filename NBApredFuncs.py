@@ -974,10 +974,11 @@ def parse_and_write_data(soup, date, time, not_ML = True):
                      'heritage','bovada','betonline'))
     counter = 0
     number_of_games = len(soup.find_all('div', attrs = {'class':'el-div eventLine-rotation'}))
+    print(number_of_games, 'games found')
     for i in range(0, number_of_games):
         A = []
         H = []
-        print('Game',str(i+1)+'/'+str(number_of_games))
+        #print('Game',str(i+1)+'/'+str(number_of_games))
         
         ## Gather all useful data from unique books
         # consensus_data = 	soup.find_all('div', 'el-div eventLine-consensus')[i].get_text()
@@ -1204,10 +1205,10 @@ def scrape_SBR_odds(filename):
 
     ## store BeautifulSoup info for parsing
     soup_ml, time_ml = soup_url('ML', todays_date)
-    print("getting today's MoneyLine odds")
+    print("Getting today's MoneyLine odds...")
     
     #### Each df_xx creates a data frame for a bet type
-    print("writing today's MoneyLine odds")
+    #print("writing today's MoneyLine odds")
     df_ml = parse_and_write_data(soup_ml, todays_date, time_ml, not_ML = False)
     # print(df_ml)
     ## Change column names to make them unique
@@ -1219,6 +1220,8 @@ def scrape_SBR_odds(filename):
     write_df = df_ml
     
     write_df.to_csv(filename, index=False)#, header = False)
+    
+    print('Odds retrieval completed')
 
 def gbcModel(training_features, training_label, testing_label, testing_features, n_est, learn_r, max_d):
     #Normalize the data

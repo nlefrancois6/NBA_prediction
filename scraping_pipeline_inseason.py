@@ -10,6 +10,10 @@ import pandas as pd
 from datetime import datetime
 from sportsreference.nba.boxscore import Boxscore, Boxscores
 
+import warnings
+from pandas.core.common import SettingWithCopyWarning
+warnings.simplefilter(action="ignore", category=SettingWithCopyWarning)
+
 import NBApredFuncs as pf
 
 #Scrape the new games
@@ -90,7 +94,7 @@ if update_games:
     if update_year:
         old_game_df = pd.read_csv('Data/scraped_boxScore_2020.csv')
         game_df = pd.concat([old_game_df, game_df])
-    save_games = True
+    save_games = False
     if save_games:
         game_df.to_csv('Data/scraped_boxScore_2020.csv', index=False)
 else:
@@ -102,7 +106,7 @@ if preprocess:
     drop_columns = ['away_minutes_played','away_points','away_losses','date','home_minutes_played','home_points','home_wins','location','losing_name','winner','winning_name','losing_abbr','winning_abbr']
     game_df = game_df.drop(columns = drop_columns).reset_index().drop(columns = ['index'])
     
-    SBR_scrape = False
+    SBR_scrape = True
     if SBR_scrape:
         verbose = False
         
@@ -113,9 +117,11 @@ if preprocess:
         #Get odds_df_twoRows, which contains the odds for today in the proper format
         odds_df_oneRow, odds_df_twoRows = pf.reformat_scraped_odds(todays_odds, gmDate_today, verbose)
         #Load the existing scraped odds list
-        odds_old_df = pd.read_csv('nba_odds_2021_scrape.csv')
+        odds_old_df = pd.read_csv('Data/nba_odds_2021_scrape.csv')
         #Add today's odds to the list
         odds_combined_df = pd.concat([odds_old_df, odds_df_twoRows])
+        
+        odds_df = odds_combined_df.copy()
         
         #Get the rows needed to add new games to game_df, corresponding to the new games in odds_df
         blankRow = pd.read_csv('Data/blank_row.csv')
@@ -128,7 +134,7 @@ if preprocess:
             if i < (len(odds_df_oneRow)-1):
                 game_df_newRows = pd.concat([game_df_newRows, blankRow])
         #Add the new rows into game_df, ready to be matched with the odds
-        game_df = pd.concat([game_df, game_df_newRows])
+        game_df = pd.concat([game_df, game_df_newRows], sort=False).reset_index().drop(columns = ['index'])
     else:
         odds_columns = ['Date','VH', 'Team', 'Final','ML']
         odds_df = pd.read_csv('Data/nba_odds_2021_scrape.csv')[odds_columns]
@@ -235,4 +241,5 @@ if preprocess:
     game_df.replace({'Season': season_mapping},inplace=True)
     
     #Save the data here and export to another script to run the model
-    game_df.to_csv('Data/pre-processedData_scraped2021_n3.csv', index=False)
+    if save_games:
+        game_df.to_csv('Data/pre-processedData_scraped2021_n3.csv', index=False)
