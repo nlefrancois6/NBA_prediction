@@ -14,7 +14,13 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import LabelEncoder
 import tensorflow as tf
 from sportsreference.nba.roster import Roster
+from sportsreference.nba.boxscore import Boxscore
 import math
+#from keras import backend as K
+#from keras.models import Model
+#from keras.models import Sequential
+#from keras.layers import Input, Dense, Dropout, Conv2D, Flatten, Activation, concatenate
+#from keras.optimizers import Adam
 
 import requests
 from bs4 import BeautifulSoup
@@ -36,7 +42,9 @@ def reformat_scraped_odds(todays_odds, gmDate, verbose):
     h_odds_list = []
     ind_nan = []
     numGames = int(len(todays_odds)/2)
+    
     for i in range(numGames):
+        
         v_odds_row = todays_odds.iloc[2*i]
         h_odds_row = todays_odds.iloc[2*i + 1]
         
@@ -48,11 +56,18 @@ def reformat_scraped_odds(todays_odds, gmDate, verbose):
         h_odds = []
         
         for s in range(len(v_odds_row)):
-            if (type(v_odds_row[s]) is np.float64) and (math.isnan(v_odds_row[s]) is False):
+            if ((type(v_odds_row[s]) is np.float64) or (type(v_odds_row[s]) is np.int64)) and (math.isnan(v_odds_row[s]) is False) and (v_odds_row[s] < 10000000):
                 v_odds.append(v_odds_row[s])
-            if type(h_odds_row[s]) is np.float64 and (math.isnan(v_odds_row[s]) is False):
+            if ((type(h_odds_row[s]) is np.float64) or (type(h_odds_row[s]) is np.int64)) and (math.isnan(v_odds_row[s]) is False) and (h_odds_row[s] < 10000000):
                 h_odds.append(h_odds_row[s])
         
+        """
+        for s in range(len(v_odds_row)):
+            if (type(v_odds_row[s]) is np.float64) and (math.isnan(v_odds_row[s]) is False):
+                v_odds.append(v_odds_row[s])
+            if (type(h_odds_row[s]) is np.float64) and (math.isnan(v_odds_row[s]) is False):
+                h_odds.append(float(h_odds_row[s]))     
+        """
         avg_v_odds = np.mean(v_odds)
         avg_h_odds = np.mean(h_odds)
         
@@ -426,6 +441,183 @@ def merge_injury_data(dataYear_df, team_injLoss_df):
     
     return dataYear_merged_df
 
+def scrape_boxScore(schedule_dict, year, month, day, numDays):
+    """
+    Take the scraped game schedule from schedule_dict, scrape the corresponding
+    boxscores, and combine them into a df
+    """
+    away_abbr = []
+    home_abbr = []
+    away_score = []
+    home_score = []
+    gmDate = []
+    boxscore = []
+    for i in range(numDays):
+        date = str(month) + '-' + str(day) + '-' + str(year)
+        print(date)
+            
+        #might need a try-except here to avoid crashing on a day with no games
+        try:
+            day_dict = schedule_dict[date]
+            numGames_day = len(day_dict)
+            
+            for j in range(numGames_day):
+                boxscore.append(day_dict[j]['boxscore'])
+                away_abbr.append(day_dict[j]['away_abbr'])
+                home_abbr.append(day_dict[j]['home_abbr'])
+                away_score.append(day_dict[j]['away_score'])
+                home_score.append(day_dict[j]['home_score'])
+                
+                if month > 9:
+                    mstr = '-'
+                else:
+                    mstr = '-0'
+                if day > 9:
+                    dstr = '-'
+                else:
+                    dstr = '-0'
+                gameDate = str(year) + mstr + str(month) + dstr + str(day)
+                gmDate.append(gameDate)
+                    
+                if (j==0) and (i==0):
+                    #for the first game on the first day,  initialize the df
+                    game_df = Boxscore(day_dict[j]['boxscore']).dataframe
+                    #Also save the initial date format
+                else:
+                    game_df_row = Boxscore(day_dict[j]['boxscore']).dataframe
+                    game_df = pd.concat([game_df, game_df_row])
+        except:
+            print('No games on date', date)
+                    
+        #advance the date
+        day, month, year = get_next_day(day, month, year)
+        
+            
+    game_df['gmDate'] = gmDate
+    game_df['away_abbr'] = away_abbr
+    game_df['home_abbr'] = home_abbr
+    game_df['away_score'] = away_score
+    game_df['home_score'] = home_score
+        
+    return game_df
+
+def preprocess_scraped_data(game_df, odds_df, away_features, home_features, total_features, prev_num_games, encode_teams, year_int):
+    """
+    Take the boxscore and odds data including upcoming games, combine them, and perform
+    processing such as averaging and inclusion of new columns
+    Return the final game_df which will be saved and used in the model
+    """
+    
+    
+    year = [2020]*len(odds_df)
+    odds_df['Year'] = year
+            
+    #Get the V and H ML values for each pair of rows and assign them to the row that will be kept
+    #Do the same with the V and H score
+    ML_V = []
+    ML_H = []
+    Score_V = []
+    Score_H = []
+    for i in range(len(odds_df)):
+        if i%2 == 0:
+            ML_V.append(odds_df['ML'].iloc[i])
+            ML_H.append(odds_df['ML'].iloc[i+1])
+            Score_V.append(odds_df['Final'].iloc[i])
+            Score_H.append(odds_df['Final'].iloc[i+1])
+        if i%2 == 1:
+            ML_V.append(0)
+            ML_H.append(0)
+            Score_V.append(0)
+            Score_H.append(0)
+            
+    num_Games = len(game_df)
+            
+    #Categorize the games by season and add it as a column to stats_df
+    season = [0]*num_Games
+    for i in range(num_Games):   
+        #If game is in first half of the year, assign it to previous season
+        if int(game_df['gmDate'][i][5:7]) < 6:
+            season[i] = int(game_df['gmDate'][i][0:4])-1
+            #If game is in second half of the year, assign it to this year's season
+        else:
+            season[i] = int(game_df['gmDate'][i][0:4]) 
+            
+    game_df['Season'] = season
+            
+    away_pace = game_df['pace']
+    home_pace = game_df['pace']
+    
+    game_df['away_pace'] = away_pace
+    game_df['home_pace'] = home_pace
+    
+    #Specify the features we want to include and use for rolling averages
+    team_list = game_df.home_abbr.unique().tolist()
+    
+    game_df = game_df[total_features]
+    
+    #Get the winner of each game from the score
+    winner = []
+    for i in range(num_Games):
+        if game_df['away_score'][i] > game_df['home_score'][i]:
+            winner.append('V')
+        else:
+            winner.append('H')
+            
+    game_df['Winner'] = winner
+            
+    #Get the odds for each game. Clearly there's a problem here bc I'm missing 451/1230 2015 games
+    v_odds_list, h_odds_list, v_score_list, h_score_list, broke_count = get_season_odds_matched_scrape(game_df, odds_df)
+    #Add the odds as two new columns in stats_df
+    game_df['V ML'] = v_odds_list
+    game_df['H ML'] = h_odds_list
+            
+    #We can manually add the odds for today's games
+    #game_df = game_df[game_df['V ML'] != 0]
+            
+    #Get the rolling averages for our seasons of interest
+    window = 'flat' #options are 'flat' or 'gaussian'
+    avg = 'rolling' #options are 'rolling' or 'season'
+    if avg == 'rolling':
+        game_df = avg_previous_num_games(game_df, prev_num_games, window, home_features, away_features, team_list, scrape=True)
+    if avg == 'season':
+        game_df = avg_season(game_df, home_features, away_features, team_list, scrape=True)
+            
+    if encode_teams:
+        #Need to encode string variables with number labels
+        team_mapping = dict( zip(team_list,range(len(team_list))) )
+        game_df.replace({'away_abbr': team_mapping},inplace=True)
+        game_df.replace({'home_abbr': team_mapping},inplace=True)
+            
+    #Include the number of games used for averaging as a column in the df
+    n_val = [prev_num_games]*len(game_df)
+    game_df['Num Games Avg'] = n_val
+            
+    season_list = game_df['Season'].unique().tolist()
+    season_mapping = dict( zip(season_list,range(len(season_list))) )
+    game_df.replace({'Season': season_mapping},inplace=True)
+            
+    return game_df
+
+def concat_upcoming_games(game_df, odds_df_oneRow, gmDate_boxscore):
+    """
+    Get the rows needed to add new games to game_df, corresponding to the new games in odds_df
+    Return the updated game_df containing the new games
+    Also return the df of just the new rows, for debugging
+    """
+    blankRow = pd.read_csv('Data/blank_row.csv')
+    game_df_newRows = blankRow.copy()
+    for i in range(len(odds_df_oneRow)):
+        game_df_newRows['away_abbr'].iloc[i] = odds_df_oneRow['away_abbr'][i]
+        game_df_newRows['home_abbr'].iloc[i] = odds_df_oneRow['home_abbr'][i]
+        game_df_newRows['gmDate'].iloc[i] = gmDate_boxscore
+        
+        if i < (len(odds_df_oneRow)-1):
+            game_df_newRows = pd.concat([game_df_newRows, blankRow])
+    #Add the new rows into game_df, ready to be matched with the odds
+    game_df = pd.concat([game_df, game_df_newRows], sort=False).reset_index().drop(columns = ['index'])
+            
+    return game_df, game_df_newRows
+    
 def get_next_day(day, month, year):
         
     months30 = [4,6,9,11]
@@ -970,15 +1162,14 @@ def parse_and_write_data(soup, date, time, not_ML = True):
                          'team','opp_team','pinnacle_line','pinnacle_odds',
                          '5dimes_line','5dimes_odds',
                          'heritage_line','heritage_odds',
-                         'bovada_line','bovada_odds',
                          'betonline_line','betonline_odds'))
     else:
         df = DataFrame(
             columns=('key','date','time',
                      'team',
                      'opp_team',
-                     'pinnacle','5dimes',
-                     'heritage','bovada','betonline'))
+                     'pinnacle','5dimes','bookmaker',
+                     'heritage','betonline','betDSI','youwager','SIA'))
     counter = 0
     number_of_games = len(soup.find_all('div', attrs = {'class':'el-div eventLine-rotation'}))
     print(number_of_games, 'games found')
@@ -1005,17 +1196,29 @@ def parse_and_write_data(soup, date, time, not_ML = True):
         except IndexError:
             fivedimes_A = ''
         try:
+            bookmaker_A =        book_line('93', i, 0)
+        except IndexError:
+            bookmaker_A = ''
+        try:
             heritage_A =        book_line('169', i, 0)
         except IndexError:
             heritage_A = ''
         try:
-            bovada_A = 		    book_line('999996', i, 0)
-        except IndexError:
-            bovada_A = ''
-        try:
             betonline_A = 		book_line('1096', i, 0)
         except IndexError:
             betonline_A = ''
+        try:
+            dsi_A = 		    book_line('123', i, 0)
+        except IndexError:
+            dsi_A = ''
+        try:
+            yw_A = 		    book_line('139', i, 0)
+        except IndexError:
+            yw_A = ''
+        try:
+            sia_A = 		    book_line('999991', i, 0)
+        except IndexError:
+            sia_A = ''
         info_H = 		        soup.find_all('div', attrs = {'class':'el-div eventLine-team'})[i].find_all('div')[1].get_text().strip()
         # hyphen_H =              info_H.find('-')
         # paren_H =               info_H.find("(")
@@ -1031,17 +1234,29 @@ def parse_and_write_data(soup, date, time, not_ML = True):
         except IndexError:
             fivedimes_H = ''
         try:
+            bookmaker_H = 	    book_line('93', i, 1)
+        except IndexError:
+            bookmaker_H = '.'
+        try:
             heritage_H = 	    book_line('169', i, 1)
         except IndexError:
             heritage_H = '.'
         try:
-            bovada_H = 		    book_line('999996', i, 1)
-        except IndexError:
-            bovada_H = '.'
-        try:
             betonline_H = 		book_line('1096', i, 1)
         except IndexError:
             betonline_H = ''
+        try:
+            dsi_H = 		    book_line('123', i, 1)
+        except IndexError:
+            dsi_H = ''
+        try:
+            yw_H = 		    book_line('139', i, 1)
+        except IndexError:
+            yw_H = ''
+        try:
+            sia_H = 		    book_line('999991', i, 1)
+        except IndexError:
+            sia_H = ''
         if team_H ==   'Detroit':
             team_H =   'Detroit'
         elif team_H == 'Indiana':
@@ -1104,11 +1319,6 @@ def parse_and_write_data(soup, date, time, not_ML = True):
             heritage_A_odds = heritage_A[heritage_A.find(' ') + 1:]
             A.append(heritage_A_line)
             A.append(heritage_A_odds)
-            bovada_A = bovada_A.replace(u'\xa0',' ').replace(u'\xbd','.5')
-            bovada_A_line = bovada_A[:bovada_A.find(' ')]
-            bovada_A_odds = bovada_A[bovada_A.find(' ') + 1:]
-            A.append(bovada_A_line)
-            A.append(bovada_A_odds)
             betonline_A = betonline_A.replace(u'\xa0',' ').replace(u'\xbd','.5')
             betonline_A_line = betonline_A[:betonline_A.find(' ')]
             betonline_A_odds = betonline_A[betonline_A.find(' ') + 1:]
@@ -1117,9 +1327,12 @@ def parse_and_write_data(soup, date, time, not_ML = True):
         else:
             A.append(pinnacle_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
             A.append(fivedimes_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            A.append(bookmaker_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
             A.append(heritage_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
-            A.append(bovada_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
             A.append(betonline_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            A.append(dsi_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            A.append(yw_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            A.append(sia_A.replace(u'\xa0',' ').replace(u'\xbd','.5'))
         #H.append(str(date) + '_' + team_A.replace(u'\xa0',' ') + '_' + team_H.replace(u'\xa0',' '))
         H.append(date)
         H.append(time)
@@ -1146,11 +1359,6 @@ def parse_and_write_data(soup, date, time, not_ML = True):
             heritage_H_odds = heritage_H[heritage_H.find(' ') + 1:]
             H.append(heritage_H_line)
             H.append(heritage_H_odds)
-            bovada_H = bovada_H.replace(u'\xa0',' ').replace(u'\xbd','.5')
-            bovada_H_line = bovada_H[:bovada_H.find(' ')]
-            bovada_H_odds = bovada_H[bovada_H.find(' ') + 1:]
-            H.append(bovada_H_line)
-            H.append(bovada_H_odds)
             betonline_H = betonline_H.replace(u'\xa0',' ').replace(u'\xbd','.5')
             betonline_H_line = betonline_H[:betonline_H.find(' ')]
             betonline_H_odds = betonline_H[betonline_H.find(' ') + 1:]
@@ -1159,9 +1367,12 @@ def parse_and_write_data(soup, date, time, not_ML = True):
         else:
             H.append(pinnacle_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
             H.append(fivedimes_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            H.append(bookmaker_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
             H.append(heritage_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
-            H.append(bovada_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
             H.append(betonline_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            H.append(dsi_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            H.append(yw_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
+            H.append(sia_H.replace(u'\xa0',' ').replace(u'\xbd','.5'))
         
 	##For testing purposes..
 	#for j in range(len(A)):
@@ -1178,22 +1389,20 @@ def select_and_rename(df, text):
     ## Rename column names so that when merged, each df will be unique 
     if text[-2:] == 'ml':
         df = df[['key','time','team','opp_team',
-                 'pinnacle','5dimes','heritage','bovada','betonline']]
+                 'pinnacle','5dimes','bookmaker','heritage','betonline','dsi','youwager','sia']]
     ## Change column names to make them unique
         df.columns = ['key',text+'_time','team','opp_team',
-                      text+'_PIN',text+'_FD',text+'_HER',text+'_BVD',text+'_BOL']
+                      text+'_PIN',text+'_FD',text+'_book',text+'_HER',text+'_BOL',text+'_dsi',text+'_yw',text+'_sia']
     else:
         df = df[['key','time','team','opp_team',
                  'pinnacle_line','pinnacle_odds',
                  '5dimes_line','5dimes_odds',
                  'heritage_line','heritage_odds',
-                 'bovada_line','bovada_odds',
                  'betonline_line','betonline_odds']]
         df.columns = ['key',text+'_time','team','opp_team',
                       text+'_PIN_line',text+'_PIN_odds',
                       text+'_FD_line',text+'_FD_odds',
                       text+'_HER_line',text+'_HER_odds',
-                      text+'_BVD_line',text+'_BVD_odds',
                       text+'_BOL_line',text+'_BOL_odds']
     return df
 
@@ -1221,10 +1430,14 @@ def scrape_SBR_odds(filename):
     ## Change column names to make them unique
     df_ml.columns = ['key','date','ml_time','team',
                      'opp_team',
-                     'ml_PIN','ml_FD','ml_HER','ml_BVD','ml_BOL']    
+                     'ml_PIN','ml_FD','ml_book','ml_HER','ml_BOL','ml_dsi','ml_yw','ml_sia']  
 
+    #Change this to change which columns are kept and remove books that aren't working
+    filter_cols = ['key','date','ml_time','team',
+                     'opp_team',
+                     'ml_PIN','ml_FD','ml_book','ml_HER','ml_BOL']
     ## Merge all DataFrames together to allow for simple printout
-    write_df = df_ml
+    write_df = df_ml[filter_cols]
     
     write_df.to_csv(filename, index=False)#, header = False)
     
@@ -1266,7 +1479,13 @@ def rfcModel(training_features, training_label, testing_label, testing_features,
     
     return rfc, predRF, pred_probsRF, accuracyRF
 
-def kerasModel(training_features, training_label, testing_label, testing_features):
+def decorrelation_loss(neuron, c):
+    def loss(y_actual, y_predicted):
+        return K.mean(
+                K.square(y_actual-y_predicted) - c * K.square(y_predicted - neuron))
+    return loss
+
+def kerasModel(training_features, training_label, testing_label, testing_features, training_odds, testing_odds, c):
     encoder = LabelEncoder()
     encoder.fit(training_label)
     training_label_enc = encoder.transform(training_label)
@@ -1277,7 +1496,7 @@ def kerasModel(training_features, training_label, testing_label, testing_feature
     scaler.transform(training_features)
     scaler.transform(testing_features)
     
-    
+    """
     model = tf.keras.models.Sequential([
       tf.keras.layers.Flatten(),
       tf.keras.layers.Dense(60, activation='relu'),
@@ -1287,13 +1506,44 @@ def kerasModel(training_features, training_label, testing_label, testing_feature
     ])
     
     model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
+                  loss = decorrelation_loss(training_odds, c),
+                  #loss='binary_crossentropy',
                   metrics=['accuracy'])
     
     model.fit(training_features.values, training_label_enc, epochs=10)
+    """
+    model = Sequential()
+    shape = training_features[0].shape
+    print(shape)
+    model.add(Conv2D(filters=32, kernel_size=(1, 8), input_shape=shape,
+                     data_format="channels_first", activation="relu"))
+    model.add(Flatten())
+    
+    model_input = Input(shape=shape)
+    model_encoded = model(model_input)
+    
+    odds_input = Input(shape=(1,), dtype="float32") #(opening or closing weight)
+    merged = concatenate([odds_input, model_encoded])
+    output = Dense(32, activation="relu")(merged)
+    output = Dropout(0.5)(output)
+    output = Dense(8, activation="relu")(output)
+    output = Dropout(0.5)(output)
+    signal = Dense(1, activation="sigmoid")(output)
+    
+    opt = Adam(lr=0.0001)
+    nba_model = Model(inputs=[model_input, odds_input], outputs=signal)
+    print(nba_model.summary())
+    
+    nba_model.compile(optimizer=opt,
+                      #loss="binary_crossentropy",
+                  loss=decorrelation_loss(odds_input, c), # Call the loss function with the selected layer
+                  metrics=['accuracy'])
+    nba_model.fit([training_features, training_odds], training_label_enc,
+                  batch_size=16,validation_data=([testing_features, testing_odds], testing_label_enc), verbose=1,epochs=20)
     accuracy = model.evaluate(testing_features, testing_label_enc)
     
     pred_probs = model.predict(testing_features)
+    #Get the winner prediction from the model confidence. Not sure if this is done properly
     preds = []
     for i in range(len(pred_probs)):
         if pred_probs[i]>0.5:
