@@ -15,6 +15,7 @@ from sklearn.preprocessing import LabelEncoder
 import tensorflow as tf
 from sportsreference.nba.roster import Roster
 from sportsreference.nba.boxscore import Boxscore
+from basketball_reference_scraper.injury_report import get_injury_report
 import math
 #from keras import backend as K
 #from keras.models import Model
@@ -289,6 +290,27 @@ def get_stat_contributions(abbr_list, year_num, year_str):
     
     return league_players_df, team_totals_df
 
+def scrape_todays_injury_report(today):
+    """
+    Scrape the injury report from today and return it in the correct format to be 
+    used by get_injLoss_daily_report to get the missing production fraction
+    """
+    inj_report = get_injury_report()
+    num_inj = len(inj_report)
+    
+    date = []
+    name = []
+    team = []
+    for i in range(num_inj):
+        date.append(today)
+        name.append(inj_report['PLAYER'].iloc[i])
+        team.append(inj_report['TEAM'].iloc[i])
+          
+    d_list = {'Date': date, 'Name': name, 'Team': team}
+    inj_today = pd.DataFrame(data=d_list)
+    
+    return inj_today
+
 def get_injLoss_daily_report(injYear_df, league_players_df, team_totals_df, abbr_list):
     """
     On each day in the season, get the list of injured players from each team and calculate 
@@ -391,6 +413,7 @@ def merge_injury_data(dataYear_df, team_injLoss_df):
     """
     
     dataYear_merged_df = dataYear_df.copy()
+    print(len(dataYear_merged_df))
     
     m_a = []
     u_a = []
@@ -404,6 +427,7 @@ def merge_injury_data(dataYear_df, team_injLoss_df):
     v_h = []
     print('Merging injury data into historical features set...')
     for i in range(len(dataYear_merged_df)):
+        print(i)
         if i%100 == 0:
             print(i,'of',len(dataYear_merged_df),'games merged')
             
