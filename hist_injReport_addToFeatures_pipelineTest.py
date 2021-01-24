@@ -63,9 +63,14 @@ if save_stats:
 #Given today's injury report, get the fraction of each team's total statistics which are missing due to injury
 team_injLoss_df = pf.get_injLoss_daily_report(inj_today, league_players_df, team_totals_df, abbr_list)
 
-#Get fraction missing for all days earlier in the season
-team_injLoss_Year_df = pf.get_injLoss_daily_report(daily_inj_Year, league_players_df, team_totals_df, abbr_list)
-#Won't actually need this since I'll be keeping a file with the fraction missing updated daily and loading it at the top of this script
+load_injuries_to_date = False 
+#this will be true always after the first time I run and save the initial list, after i'll just load&append
+
+if load_injuries_to_date:
+    team_injLoss_Year_df = pd.read_csv('Data/injuryLosses2020.csv')
+else:
+    #Get fraction missing for all days earlier in the season
+    team_injLoss_Year_df = pf.get_injLoss_daily_report(daily_inj_Year, league_players_df, team_totals_df, abbr_list)
 
 t3 = time.time()
 t_process = (t3-t2)/60
@@ -74,21 +79,14 @@ print(t_process, 'minutes to process daily injury report features')
 #Add today's injury losses to the running list for the season
 injYear_df_combined = pd.concat([team_injLoss_Year_df, team_injLoss_df])
 
-#save team_injLoss_df to a csv
+#save updated team_injLoss_df to a csv
 save_injLoss = False
 if save_injLoss:
     injYear_df_combined.to_csv('Data/injuryLosses2020.csv', index=False)
 
 #Merge team statistics and injury loss dfs
-dataYear_merged_df = pf.merge_injury_data(dataYear_df, team_injLoss_df)
-"""
-Problem: this gives an error if there are days without injury report (ie earlier in the
-season when I wasn't tracking it). 
-Planned Solution: I need to have the injury report for all the days before today 
-stored, load it, and append today's injuries to it. Then I'll save it after to use the next day.
-Update: I have that past data now but I still get the "single positional indexer is out-of-bounds"
-error at line 480 of NBApredFuncs.py
-"""
+dataYear_merged_df = pf.merge_injury_data(dataYear_df, injYear_df_combined)
+
 
 #Encode the team abbreviations back to numerical labels
 team_list = dataYear_merged_df.home_abbr.unique().tolist()
@@ -108,7 +106,7 @@ t_tot = (t4-t1)/60
 print(t_tot, 'minutes total to process data for', year_str)
 
 """
-Ideas for who to quantify importance of each player and the effects of missing someone due to injury:
+Ideas for how to quantify importance of each player and the effects of missing someone due to injury:
     Get the minutes played (divide by games played), usage percentage,
     offensive & defensive win shares (divide into units of per 48 minutes), and on-court 
     plus/minus (divide by games played) for each player.

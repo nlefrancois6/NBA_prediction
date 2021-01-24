@@ -451,7 +451,6 @@ def merge_injury_data(dataYear_df, team_injLoss_df):
     """
     
     dataYear_merged_df = dataYear_df.copy()
-    print(len(dataYear_merged_df))
     
     m_a = []
     u_a = []
@@ -465,7 +464,6 @@ def merge_injury_data(dataYear_df, team_injLoss_df):
     v_h = []
     print('Merging injury data into historical features set...')
     for i in range(len(dataYear_merged_df)):
-        print(i)
         if i%100 == 0:
             print(i,'of',len(dataYear_merged_df),'games merged')
             
