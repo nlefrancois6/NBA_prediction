@@ -30,6 +30,44 @@ from datetime import date
 import time
 from pandas import DataFrame
 
+def injury_scrape_process_page(soup, d, t, a, r, n):
+    """
+    Given the soup for a single page from prosportstransactions, scrape the 
+    injury report data for every row.
+    
+    Return the data in each column as a separate array
+    """
+    all_entry_soup = soup.find('td').parent.find_next_siblings()
+
+    numRows = len(soup.find_all(nowrap="nowrap"))
+    for i in range(numRows):
+        #Get a soup for all the columns in a given entry
+        current_entry_soup = all_entry_soup[i]
+        current_entry_values = current_entry_soup.find_all('td')
+        
+        #Extract each column value and save it to the respective list
+        d.append(current_entry_values[0].string)
+        t.append(current_entry_values[1].string[1:])
+        a.append(current_entry_values[2].string[3:]) #Drop the \textbullet from the front
+        r.append(current_entry_values[3].string[3:]) #Drop the \textbullet from the front
+        n.append(current_entry_values[4].string)
+        
+    return d, t, a, r, n
+
+def injury_scrape_get_page_soup(pageStart, url):
+    """
+    Get the soup from an injury page given the row to start at
+    """
+    if pageStart == 0:
+        raw_data = requests.get(url)
+        soup_page = BeautifulSoup(raw_data.text, 'html.parser')
+    else:
+        url_new_page = url+'&start='+str(pageStart)
+        raw_data = requests.get(url_new_page)
+        soup_page = BeautifulSoup(raw_data.text, 'html.parser')
+    
+    return soup_page
+
 def reformat_scraped_odds(todays_odds, gmDate, verbose):
     """
     Take the odds for today obtained from the SBRscrape function and put them

@@ -15,23 +15,24 @@ year_num = 2020
 year_str = '2020-21'
 
 dataYear_df = pd.read_csv('Data/pre-processedData_scraped_abbr_2021_n3.csv')
-#Replace this with the injury data from this season up to yesterday
-team_injLoss_Year_df = pd.read_csv('Data/injuries_historical_dailyReport_2019.csv')
-"""
+#Replace this with the injury data of each team from this season up to yesterday
+daily_inj_Year = pd.read_csv('Data/injuries_historical_dailyReport_2020.csv')
+#daily_inj_Year = pd.read_csv('Data/injuries_historical_dailyReport_2019.csv')
+
 print('Relabelling Team Names...')
 team_dict = {'Hawks':'ATL', 'Celtics':'BOS', 'Nets':'BRK','Hornets':'CHO','Bulls':'CHI','Cavaliers':'CLE','Mavericks':'DAL', 'Nuggets':'DEN','Pistons':'DET',
              'Warriors':'GSW', 'Rockets':'HOU', 'Pacers':'IND','Clippers':'LAC','Lakers':'LAL','Grizzlies':'MEM','Heat':'MIA','Bucks':'MIL','Timberwolves':'MIN',
              'Pelicans':'NOP','Knicks':'NYK','Thunder':'OKC','Magic':'ORL','76ers':'PHI','Suns':'PHO','Blazers':'POR','Kings':'SAC',
              'Spurs':'SAS','Raptors':'TOR','Jazz':'UTA','Wizards':'WAS'}
 
-for i in range(len(injYear_df)):
-    injYear_df['Team'][i] = team_dict[injYear_df['Team'][i]]
-"""
+for i in range(len(daily_inj_Year)):
+    daily_inj_Year['Team'][i] = team_dict[daily_inj_Year['Team'][i]]
+
 abbr_list = ['ATL', 'BOS', 'BRK','CHO','CHI','CLE','DAL','DEN','DET','GSW','HOU','IND','LAC','LAL','MEM','MIA','MIL','MIN','NOP','NYK','OKC','ORL','PHI','PHO','POR','SAC','SAS','TOR','UTA','WAS']
 #abbr_list = ['ATL']
 
 #Get and reformat today's injury report
-today = '2021-01-21'
+today = '2021-01-22'
 inj_today = pf.scrape_todays_injury_report(today)
 
 t1 = time.time()
@@ -62,6 +63,10 @@ if save_stats:
 #Given today's injury report, get the fraction of each team's total statistics which are missing due to injury
 team_injLoss_df = pf.get_injLoss_daily_report(inj_today, league_players_df, team_totals_df, abbr_list)
 
+#Get fraction missing for all days earlier in the season
+team_injLoss_Year_df = pf.get_injLoss_daily_report(daily_inj_Year, league_players_df, team_totals_df, abbr_list)
+#Won't actually need this since I'll be keeping a file with the fraction missing updated daily and loading it at the top of this script
+
 t3 = time.time()
 t_process = (t3-t2)/60
 print(t_process, 'minutes to process daily injury report features')
@@ -75,12 +80,14 @@ if save_injLoss:
     injYear_df_combined.to_csv('Data/injuryLosses2020.csv', index=False)
 
 #Merge team statistics and injury loss dfs
-#dataYear_merged_df = pf.merge_injury_data(dataYear_df, team_injLoss_df)
+dataYear_merged_df = pf.merge_injury_data(dataYear_df, team_injLoss_df)
 """
 Problem: this gives an error if there are days without injury report (ie earlier in the
 season when I wasn't tracking it). 
 Planned Solution: I need to have the injury report for all the days before today 
 stored, load it, and append today's injuries to it. Then I'll save it after to use the next day.
+Update: I have that past data now but I still get the "single positional indexer is out-of-bounds"
+error at line 480 of NBApredFuncs.py
 """
 
 #Encode the team abbreviations back to numerical labels
@@ -91,7 +98,7 @@ dataYear_merged_df.replace({'home_abbr': team_mapping},inplace=True)
 
 save_merged_data = False
 if save_merged_data:
-    dataYear_merged_df.to_csv('Data/pre-processedData_scraped_inj_1920_n3.csv', index=False)
+    dataYear_merged_df.to_csv('Data/pre-processedData_scraped_inj_2021_n3.csv', index=False)
 
 t4 = time.time()
 t_features = (t4-t3)/60
