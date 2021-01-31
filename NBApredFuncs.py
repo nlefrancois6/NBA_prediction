@@ -561,7 +561,7 @@ def scrape_boxScore(schedule_dict, year, month, day, numDays):
         
     return game_df
 
-def preprocess_scraped_data(game_df, odds_df, away_features, home_features, total_features, prev_num_games, encode_teams, year_int):
+def preprocess_scraped_data(game_df, odds_df, inj_df, away_features, home_features, total_features, prev_num_games, encode_teams, year_int):
     """
     Take the boxscore and odds data including upcoming games, combine them, and perform
     processing such as averaging and inclusion of new columns
@@ -631,8 +631,62 @@ def preprocess_scraped_data(game_df, odds_df, away_features, home_features, tota
     game_df['V ML'] = v_odds_list
     game_df['H ML'] = h_odds_list
             
-    #We can manually add the odds for today's games
-    #game_df = game_df[game_df['V ML'] != 0]
+    
+    #initialize storage for inj_df columns for each team
+    hg = []
+    hm = []
+    hu = []
+    hwSO = []
+    hwSD = []
+    hv = []
+    
+    vg = []
+    vm = []
+    vu = []
+    vwSO = []
+    vwSD = []
+    vv = []
+    for i in range(num_Games):
+        #Get the teams and the date
+        home_abbr = game_df['home_abbr'].iloc[i]
+        away_abbr = game_df['away_abbr'].iloc[i]
+        gmDate = game_df['gmDate'].iloc[i]
+        
+        #get inj_df rows for each team
+        injDay_df = inj_df.loc[inj_df['date'] == gmDate]
+        home_inj = injDay_df.loc[injDay_df['team'] == home_abbr]
+        away_inj = injDay_df.loc[injDay_df['team'] == away_abbr]
+        
+        #store value of each column for each team
+        hg.append(home_inj['games_played'].iloc[0])
+        hm.append(home_inj['minutes_played'].iloc[0])
+        hu.append(home_inj['usage_percentage'].iloc[0])
+        hwSO.append(home_inj['offensive_win_shares'].iloc[0])
+        hwSD.append(home_inj['defensive_win_shares'].iloc[0])
+        hv.append(home_inj['value_over_replacement_player'].iloc[0])
+        
+        vg.append(away_inj['games_played'].iloc[0])
+        vm.append(away_inj['minutes_played'].iloc[0])
+        vu.append(away_inj['usage_percentage'].iloc[0])
+        vwSO.append(away_inj['offensive_win_shares'].iloc[0])
+        vwSD.append(away_inj['defensive_win_shares'].iloc[0])
+        vv.append(away_inj['value_over_replacement_player'].iloc[0])
+    
+    #Merge the new columns into game_df
+    game_df['home_games_played'] = hg
+    game_df['home_minutes_played'] = hm
+    game_df['home_usage_percentage'] = hu
+    game_df['home_offensive_win_shares'] = hwSO
+    game_df['home_defensive_win_shares'] = hwSD
+    game_df['home_value_over_replacement_player'] = hv
+    
+    game_df['away_games_played'] = vg
+    game_df['away_minutes_played'] = vm
+    game_df['away_usage_percentage'] = vu
+    game_df['away_offensive_win_shares'] = vwSO
+    game_df['away_defensive_win_shares'] = vwSD
+    game_df['away_value_over_replacement_player'] = vv
+    
             
     #Get the rolling averages for our seasons of interest
     window = 'flat' #options are 'flat' or 'gaussian'
@@ -1190,7 +1244,8 @@ def soup_url(type_of_line, tdate = str(date.today()).replace('-','')):
         # url_addon = 'totals/1st-half/'
     else:
         print("Wrong url_addon")
-    url = 'https://classic.sportsbookreview.com/betting-odds/nba-basketball/' + url_addon + '?date=' + tdate
+    #url = 'https://classic.sportsbookreview.com/betting-odds/nba-basketball/' + url_addon + '?date=' + tdate
+    url = 'https://classic.sportsbookreview.com/betting-odds/nba-basketball/' + url_addon
     #now = datetime.datetime.now()
     raw_data = requests.get(url)
     soup_big = BeautifulSoup(raw_data.text, 'html.parser')
