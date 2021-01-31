@@ -22,7 +22,7 @@ if scraped == False:
     #data2016_df = data_all_years.loc[data_all_years['Season'] == 4]
     model_data_df = pd.concat([data2015_df])
 
-    validation_data_df = data_all_years.loc[data_all_years['Season'] == 5]
+    validation_df = data_all_years.loc[data_all_years['Season'] == 5]
 else:
     data2015_df = pd.read_csv('Data/pre-processedData_scraped_inj_1516_n3.csv')
     data2016_df = pd.read_csv('Data/pre-processedData_scraped_inj_1617_n3.csv')
@@ -46,12 +46,12 @@ else:
     
     
     #model_data_df = pd.concat([data2017_df, data2016_df])
-    #validation_data_df = data2020_df
+    #validation_df = data2020_df
     
     #Don't delete these settings, they give the best results so far
     training_df = data2018_df
     testing_df = pd.concat([data2017_df, data2019_df])
-    validation_data_df = data2020_df
+    validation_df = data2020_df
 
 
 #Separate training and testing set
@@ -83,8 +83,8 @@ if scraped == False:
     output_label = ['teamRslt'] 
     #Note teamRslt = Win means visitors win, teamRslt = Loss means home wins
 else:
-    #away_features = ['away_pace','away_assist_percentage','away_assists','away_block_percentage','away_blocks','away_defensive_rating','away_defensive_rebound_percentage','away_defensive_rebounds','away_effective_field_goal_percentage','away_field_goal_attempts','away_field_goal_percentage','away_field_goals','away_free_throw_attempts','away_free_throw_percentage','away_free_throws','away_offensive_rating','away_offensive_rebounds','away_personal_fouls','away_steal_percentage','away_steals','away_three_point_attempt_rate','away_three_point_field_goal_attempts','away_three_point_field_goal_percentage','away_three_point_field_goals','away_total_rebound_percentage','away_total_rebounds','away_true_shooting_percentage','away_turnover_percentage','away_turnovers','away_two_point_field_goal_attempts','away_two_point_field_goal_percentage','away_two_point_field_goals']        
-    #home_features = ['home_pace','home_assist_percentage','home_assists','home_block_percentage','home_blocks','home_defensive_rating','home_defensive_rebound_percentage','home_defensive_rebounds','home_effective_field_goal_percentage','home_field_goal_attempts','home_field_goal_percentage','home_field_goals','home_free_throw_attempts','home_free_throw_percentage','home_free_throws','home_offensive_rating','home_offensive_rebounds','home_personal_fouls','home_steal_percentage','home_steals','home_three_point_attempt_rate','home_three_point_field_goal_attempts','home_three_point_field_goal_percentage','home_three_point_field_goals','home_total_rebound_percentage','home_total_rebounds','home_true_shooting_percentage','home_turnover_percentage','home_turnovers','home_two_point_field_goal_attempts','home_two_point_field_goal_percentage','home_two_point_field_goals']
+    #away_features = ['away_pace','away_assist_percentage','away_assists','away_block_percentage','away_blocks','away_defensive_rating','away_defensive_rebound_percentage','away_defensive_rebounds','away_effective_field_goal_percentage','away_field_goal_attempts','away_field_goal_percentage','away_field_goals','away_free_throw_attempts','away_free_throw_percentage','away_free_throws','away_offensive_rating','away_offensive_rebounds','away_personal_fouls','away_steal_percentage','away_steals','away_three_point_attempt_rate','away_three_point_field_goal_attempts','away_three_point_field_goal_percentage','away_three_point_field_goals','away_total_rebound_percentage','away_total_rebounds','away_true_shooting_percentage','away_turnover_percentage','away_turnovers','away_two_point_field_goal_attempts','away_two_point_field_goal_percentage','away_two_point_field_goals','away_minutes_played_inj', 'away_usage_percentage_inj','away_offensive_win_shares_inj','away_defensive_win_shares_inj','away_value_over_replacement_inj']        
+    #home_features = ['home_pace','home_assist_percentage','home_assists','home_block_percentage','home_blocks','home_defensive_rating','home_defensive_rebound_percentage','home_defensive_rebounds','home_effective_field_goal_percentage','home_field_goal_attempts','home_field_goal_percentage','home_field_goals','home_free_throw_attempts','home_free_throw_percentage','home_free_throws','home_offensive_rating','home_offensive_rebounds','home_personal_fouls','home_steal_percentage','home_steals','home_three_point_attempt_rate','home_three_point_field_goal_attempts','home_three_point_field_goal_percentage','home_three_point_field_goals','home_total_rebound_percentage','home_total_rebounds','home_true_shooting_percentage','home_turnover_percentage','home_turnovers','home_two_point_field_goal_attempts','home_two_point_field_goal_percentage','home_two_point_field_goals','home_minutes_played_inj','home_usage_percentage_inj','home_offensive_win_shares_inj','home_defensive_win_shares_inj','home_value_over_replacement_inj']
     
     away_features = ['away_pace','away_assist_percentage','away_block_percentage','away_defensive_rating','away_defensive_rebound_percentage','away_field_goal_percentage','away_free_throw_attempts','away_free_throw_percentage','away_offensive_rebounds','away_personal_fouls','away_steal_percentage','away_steals','away_three_point_attempt_rate','away_three_point_field_goal_attempts','away_three_point_field_goal_percentage','away_total_rebound_percentage','away_turnover_percentage','away_turnovers','away_minutes_played_inj', 'away_usage_percentage_inj','away_offensive_win_shares_inj', 'away_defensive_win_shares_inj','away_value_over_replacement_inj']        
     home_features = ['home_pace','home_assist_percentage','home_block_percentage','home_defensive_rating','home_defensive_rebound_percentage','home_defensive_rebounds','home_field_goal_percentage','home_free_throw_attempts','home_free_throw_percentage','home_offensive_rebounds','home_personal_fouls','home_steal_percentage','home_steals','home_three_point_attempt_rate','home_three_point_field_goal_attempts','home_three_point_field_goal_percentage','home_total_rebound_percentage','home_turnover_percentage','home_turnovers','home_minutes_played_inj','home_usage_percentage_inj','home_offensive_win_shares_inj', 'home_defensive_win_shares_inj','home_value_over_replacement_inj']
@@ -92,10 +92,13 @@ else:
     
     class_features = away_features + home_features
     output_label = ['Winner']
-
-
+    
+    use_PCA = True
+    percentage_variance_explained = 0.9
+    
+    
 #class_params = [300, 0.01, 5] or [80, 3]
-model = 'original'
+model = 'opt'
 if model =='opt':
     #For optimized model
     class_params = [80, 3]
@@ -113,7 +116,7 @@ reg_params = [100, 5]
 reg_threshold = 0.1
 
 #Train and test the layered model
-class_model, profit_reg_model, testing_gains_reg = pf.layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scraped)
+class_model, profit_reg_model, testing_gains_reg, pca = pf.layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scraped, use_PCA, percentage_variance_explained)
 
 if hist:
     bins = np.arange(-20,200, 5)
@@ -150,7 +153,7 @@ print('R:', R)
 validation_test = True
 if validation_test:
     fixed_wager = False
-    val_gains_reg = pf.layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scraped)
+    val_gains_reg = pf.layered_model_validate(validation_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scraped, use_PCA, pca)
     
     wins = 0
     win_tally = 0
@@ -190,7 +193,7 @@ if new_bets:
     todays_index = 136 #index of first game today
     #Analyze the upcoming games and decide when/how much to bet
     current_data_df = data2020_df[todays_index:]
-    bet_placed_indices, recommended_wagers, recommended_bets = pf.make_new_bets(current_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, fixed_wager, wager_pct, wager_crit, account)
+    bet_placed_indices, recommended_wagers, recommended_bets = pf.make_new_bets(current_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, fixed_wager, wager_pct, wager_crit, account, use_PCA, pca)
     
     #load the bet tracking csv, append the new bets, and save back to csv
     bet_tracking_df = current_data_df.copy()        

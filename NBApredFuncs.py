@@ -12,6 +12,7 @@ import pandas as pd
 from sklearn import ensemble, metrics
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import LabelEncoder
+from sklearn.decomposition import PCA
 import tensorflow as tf
 from sportsreference.nba.roster import Roster
 from sportsreference.nba.boxscore import Boxscore
@@ -29,6 +30,21 @@ import datetime
 from datetime import date
 import time
 from pandas import DataFrame
+
+def apply_PCA(df, class_features, percentage_variance_explained):
+    """
+    Take the high-dimensional classification data and apply PCA to reduce dimensionality
+    Return the transformed data as well as the PCA model which has now been fit
+    """
+    
+    df_X = df[class_features]
+    
+    X_std = pd.DataFrame(StandardScaler().fit_transform(df_X), columns = df_X.columns)
+    
+    pca = PCA(percentage_variance_explained)
+    x_PCA = pca.fit_transform(X_std)
+    
+    return x_PCA, pca
 
 def injury_scrape_process_page(soup, d, t, a, r, n):
     """
@@ -1849,7 +1865,7 @@ def layered_model_doubleReg_TrainTest(training_df, testing_df, class_features, o
     return v_score_model, h_score_model, profit_reg_model, testing_gains_reg
 
 
-def layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scrape):
+def layered_model_TrainTest(training_df, testing_df, class_features, output_label, classifier_model, class_params, reg_features, reg_label, reg_params, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scrape, use_PCA, percentage_variance_explained):
     """
     Train and test the classification-regression layered model
     
@@ -1892,13 +1908,21 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     """
     
     #Define the features (input) and label (prediction output) for training set
-    training_features = training_df[class_features]
+    if use_PCA:
+        training_features, pca = apply_PCA(training_df, class_features, percentage_variance_explained)
+    else:
+        training_features = training_df[class_features]
+        pca = PCA(percentage_variance_explained) #If we aren't using PCA, still need a dummy to output at the end of the func
     training_label = training_df[output_label]
     #training_odds_v = training_df['V ML'] #might not be needed
     #training_odds_h = training_df['H ML'] #might not be needed
 
     #Define features and label for testing set
-    testing_features = testing_df[class_features]
+    if use_PCA:
+        testing_x = testing_df[class_features]
+        testing_features = pca.transform(testing_x)
+    else:
+        testing_features = testing_df[class_features]
     testing_label = testing_df[output_label]
     testing_odds_v = testing_df['V ML']
     testing_odds_h = testing_df['H ML']
@@ -2016,11 +2040,11 @@ def layered_model_TrainTest(training_df, testing_df, class_features, output_labe
     if plot_gains:
         plt.title('Classification-Regression Layered Model Profit, Testing Data')
     
-    return class_model, profit_reg_model, testing_gains_reg
+    return class_model, profit_reg_model, testing_gains_reg, pca
 
 
 
-def layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scrape):
+def layered_model_validate(validation_data_df, class_features, output_label, class_model, reg_features, profit_reg_model, reg_threshold, plot_gains, fixed_wager, wager_pct, wager_crit, scrape, use_PCA, pca):
     """
     Validate the layered model using an unseen dataset. Inputs are mostly the same as for 
     layered_model_TestTrain, with class_model and profit_reg_model the two trained model
@@ -2028,7 +2052,11 @@ def layered_model_validate(validation_data_df, class_features, output_label, cla
     """
     
     #Format the validation data
-    validation_class_features = validation_data_df[class_features]
+    if use_PCA: 
+        validation_x = validation_data_df[class_features]
+        validation_class_features = pca.transform(validation_x)
+    else:
+        validation_class_features = validation_data_df[class_features]
     validation_label = validation_data_df[output_label]
     validation_odds_v = validation_data_df['V ML']
     validation_odds_h = validation_data_df['H ML']
@@ -2076,14 +2104,18 @@ def layered_model_validate(validation_data_df, class_features, output_label, cla
       
     return val_gains_reg
 
-def make_new_bets(current_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, fixed_wager, wager_pct, wager_crit, account):
+def make_new_bets(current_data_df, class_features, output_label, class_model, reg_features, reg_label, profit_reg_model, reg_threshold, fixed_wager, wager_pct, wager_crit, account, use_PCA, pca):
     """
     Given data for some new games (current_data_df) and the trained layered model, 
     output the games that we should bet on and how much money to bet
     """
     
     #Format the data
-    data_class_features = current_data_df[class_features]
+    if use_PCA: 
+        data_x = current_data_df[class_features]
+        data_class_features = pca.transform(data_x)
+    else:
+        data_class_features = current_data_df[class_features]
     #data_label = current_data_df[output_label]
     data_odds_v = current_data_df['V ML']
     data_odds_h = current_data_df['H ML']
