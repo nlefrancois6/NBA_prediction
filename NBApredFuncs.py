@@ -673,19 +673,19 @@ def preprocess_scraped_data(game_df, odds_df, inj_df, away_features, home_featur
         vv.append(away_inj['value_over_replacement_player'].iloc[0])
     
     #Merge the new columns into game_df
-    game_df['home_games_played'] = hg
-    game_df['home_minutes_played'] = hm
-    game_df['home_usage_percentage'] = hu
-    game_df['home_offensive_win_shares'] = hwSO
-    game_df['home_defensive_win_shares'] = hwSD
-    game_df['home_value_over_replacement_player'] = hv
+    #game_df['home_games_played_inj'] = hg
+    game_df['home_minutes_played_inj'] = hm
+    game_df['home_usage_percentage_inj'] = hu
+    game_df['home_offensive_win_shares_inj'] = hwSO
+    game_df['home_defensive_win_shares_inj'] = hwSD
+    game_df['home_value_over_replacement_inj'] = hv
     
-    game_df['away_games_played'] = vg
-    game_df['away_minutes_played'] = vm
-    game_df['away_usage_percentage'] = vu
-    game_df['away_offensive_win_shares'] = vwSO
-    game_df['away_defensive_win_shares'] = vwSD
-    game_df['away_value_over_replacement_player'] = vv
+    #game_df['away_games_played_inj'] = vg
+    game_df['away_minutes_played_inj'] = vm
+    game_df['away_usage_percentage_inj'] = vu
+    game_df['away_offensive_win_shares_inj'] = vwSO
+    game_df['away_defensive_win_shares_inj'] = vwSD
+    game_df['away_value_over_replacement_inj'] = vv
     
             
     #Get the rolling averages for our seasons of interest
@@ -1244,8 +1244,8 @@ def soup_url(type_of_line, tdate = str(date.today()).replace('-','')):
         # url_addon = 'totals/1st-half/'
     else:
         print("Wrong url_addon")
-    #url = 'https://classic.sportsbookreview.com/betting-odds/nba-basketball/' + url_addon + '?date=' + tdate
-    url = 'https://classic.sportsbookreview.com/betting-odds/nba-basketball/' + url_addon
+    url = 'https://www.sportsbookreview.com/betting-odds/nba-basketball/' + url_addon + '?date=' + tdate
+    #url = 'https://classic.sportsbookreview.com/betting-odds/nba-basketball/' + url_addon
     #now = datetime.datetime.now()
     raw_data = requests.get(url)
     soup_big = BeautifulSoup(raw_data.text, 'html.parser')
